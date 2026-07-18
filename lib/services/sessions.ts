@@ -13,14 +13,13 @@ export interface SaveSessionInput {
   operation: Operation;
   level?: number;
   durationSeconds: number;
-  score: number;
   answers: AnswerRecord[];
 }
 
 /**
  * Persiste une session terminée et le détail de ses réponses, dans une même
  * transaction. Les totaux (nb de questions, bonnes réponses) sont dérivés des
- * réponses pour rester cohérents.
+ * réponses. Le score = nombre de bonnes réponses.
  */
 export async function saveSession(
   db: Database,
@@ -40,7 +39,7 @@ export async function saveSession(
         durationSeconds: input.durationSeconds,
         totalQuestions,
         correctCount,
-        score: input.score,
+        score: correctCount, // le score EST le nombre de bonnes réponses
       })
       .returning();
 
@@ -69,7 +68,7 @@ export interface BestScore {
   plays: number;
 }
 
-/** Meilleur score et nombre de parties par opération, pour un profil. */
+/** Meilleur score (= max de bonnes réponses) et nb de parties par opération. */
 export async function bestScores(
   db: Database,
   profileId: number,
@@ -77,7 +76,7 @@ export async function bestScores(
   const rows = await db
     .select({
       operation: sessions.operation,
-      bestScore: sql<number>`max(${sessions.score})`,
+      bestScore: sql<number>`max(${sessions.correctCount})`,
       plays: sql<number>`count(*)`,
     })
     .from(sessions)
@@ -106,14 +105,14 @@ export async function recentSessions(
     .limit(limit);
 }
 
-/** Meilleur score d'un profil pour une opération précise (0 si aucune partie). */
+/** Meilleur score (bonnes réponses) pour une opération (0 si aucune partie). */
 export async function bestScoreFor(
   db: Database,
   profileId: number,
   operation: Operation,
 ): Promise<number> {
   const rows = await db
-    .select({ bestScore: sql<number>`max(${sessions.score})` })
+    .select({ bestScore: sql<number>`max(${sessions.correctCount})` })
     .from(sessions)
     .where(
       and(eq(sessions.profileId, profileId), eq(sessions.operation, operation)),

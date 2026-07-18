@@ -11,9 +11,26 @@ interface BestScore {
   plays: number;
 }
 
+interface SessionRow {
+  id: number;
+  operation: Operation;
+  correctCount: number;
+  startedAt: string;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleString("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function ScoresPage() {
   const { profile, ready } = useProfile();
   const [scores, setScores] = useState<BestScore[] | null>(null);
+  const [history, setHistory] = useState<SessionRow[] | null>(null);
 
   useEffect(() => {
     if (!ready || !profile) return;
@@ -21,10 +38,14 @@ export default function ScoresPage() {
       .then((r) => (r.ok ? r.json() : []))
       .then(setScores)
       .catch(() => setScores([]));
+    fetch(`/api/history?profileId=${profile.id}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setHistory)
+      .catch(() => setHistory([]));
   }, [ready, profile]);
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-8 px-6 py-10">
       <header className="flex items-center gap-3">
         <Link
           href="/"
@@ -33,46 +54,88 @@ export default function ScoresPage() {
         >
           ‹
         </Link>
-        <h1 className="text-2xl font-bold">Mes meilleurs scores</h1>
+        <h1 className="text-2xl font-bold">Mes scores</h1>
       </header>
 
       {ready && !profile && (
         <p className="text-muted">Aucun profil sélectionné.</p>
       )}
 
-      {profile && scores === null && <p className="text-muted">Chargement…</p>}
-
-      {profile && scores !== null && scores.length === 0 && (
-        <p className="text-muted">
-          Aucune partie enregistrée pour l’instant. Joue une session&nbsp;!
-        </p>
+      {/* Records */}
+      {profile && (
+        <section className="flex flex-col gap-2">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted">
+            Records
+          </h2>
+          {scores === null ? (
+            <p className="text-muted">Chargement…</p>
+          ) : scores.length === 0 ? (
+            <p className="text-muted">Aucune partie enregistrée pour l’instant.</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {scores.map((s) => (
+                <li
+                  key={s.operation}
+                  className="neu-raised flex items-center justify-between rounded-2xl px-6 py-5"
+                >
+                  <span className="flex items-center gap-3">
+                    <span className="w-6 text-center text-xl text-accent">
+                      {OPERATION_CONFIG[s.operation]?.symbol ?? "?"}
+                    </span>
+                    <span className="text-lg font-medium">
+                      {OPERATION_CONFIG[s.operation]?.label ?? s.operation}
+                    </span>
+                  </span>
+                  <span className="text-right">
+                    <span className="block text-2xl font-extrabold">
+                      {s.bestScore}
+                    </span>
+                    <span className="text-xs text-muted">
+                      meilleur · {s.plays} partie{s.plays > 1 ? "s" : ""}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
 
-      <ul className="flex flex-col gap-3">
-        {scores?.map((s) => (
-          <li
-            key={s.operation}
-            className="neu-raised flex items-center justify-between rounded-2xl px-6 py-5"
-          >
-            <span className="flex items-center gap-3">
-              <span className="w-6 text-center text-xl text-accent">
-                {OPERATION_CONFIG[s.operation]?.symbol ?? "?"}
-              </span>
-              <span className="text-lg font-medium">
-                {OPERATION_CONFIG[s.operation]?.label ?? s.operation}
-              </span>
-            </span>
-            <span className="text-right">
-              <span className="block text-2xl font-extrabold">
-                {s.bestScore}
-              </span>
-              <span className="text-xs text-muted">
-                {s.plays} partie{s.plays > 1 ? "s" : ""}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ul>
+      {/* Historique */}
+      {profile && (
+        <section className="flex flex-col gap-2">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted">
+            Historique
+          </h2>
+          {history === null ? (
+            <p className="text-muted">Chargement…</p>
+          ) : history.length === 0 ? (
+            <p className="text-muted">Rien pour l’instant. Joue une session&nbsp;!</p>
+          ) : (
+            <ul className="neu-raised flex flex-col rounded-3xl p-2">
+              {history.map((h) => (
+                <li
+                  key={h.id}
+                  className="flex items-center justify-between rounded-2xl px-4 py-3"
+                >
+                  <span className="flex items-center gap-3">
+                    <span className="w-5 text-center text-accent">
+                      {OPERATION_CONFIG[h.operation]?.symbol ?? "?"}
+                    </span>
+                    <span className="text-sm text-muted">
+                      {formatDate(h.startedAt)}
+                    </span>
+                  </span>
+                  <span className="text-sm font-semibold">
+                    {h.correctCount} bonne{h.correctCount > 1 ? "s" : ""} réponse
+                    {h.correctCount > 1 ? "s" : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </main>
   );
 }

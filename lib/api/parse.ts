@@ -48,7 +48,6 @@ export function parseSaveSessionInput(body: unknown): SaveSessionInput | null {
   if (
     !isFiniteNumber(b.profileId) ||
     !isFiniteNumber(b.durationSeconds) ||
-    !isFiniteNumber(b.score) ||
     typeof b.operation !== "string" ||
     !isOperation(b.operation) ||
     !Array.isArray(b.answers)
@@ -70,7 +69,6 @@ export function parseSaveSessionInput(body: unknown): SaveSessionInput | null {
     operation: b.operation,
     level,
     durationSeconds: b.durationSeconds,
-    score: b.score,
     answers,
   };
 }

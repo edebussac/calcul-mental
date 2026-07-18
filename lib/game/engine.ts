@@ -1,8 +1,9 @@
 /**
- * Moteur de session pur : agrège les réponses, calcule série (streak) et score.
+ * Moteur de session pur : agrège les réponses et suit le nombre de bonnes
+ * réponses (= le score) et la série (streak).
  *
- * Sans React ni DB → 100 % testable. L'UI appelle `recordAnswer` à chaque
- * validation et lit l'état renvoyé ; la persistance sérialise `AnswerRecord[]`.
+ * Le « score » est simplement le nombre de bonnes réponses : pas de points ni
+ * de bonus. Sans React ni DB → 100 % testable.
  */
 
 import type { BaseOperation } from "./operations";
@@ -27,13 +28,10 @@ export interface SessionState {
   streak: number;
   /** Meilleure série atteinte durant la session. */
   bestStreak: number;
+  /** Nombre de bonnes réponses = le score. */
   correctCount: number;
   totalCount: number;
-  score: number;
 }
-
-export const POINTS_PER_CORRECT = 10;
-export const STREAK_BONUS_STEP = 2;
 
 export const initialSession: SessionState = {
   answers: [],
@@ -41,13 +39,7 @@ export const initialSession: SessionState = {
   bestStreak: 0,
   correctCount: 0,
   totalCount: 0,
-  score: 0,
 };
-
-/** Points gagnés pour une bonne réponse selon la nouvelle valeur de série. */
-export function pointsForCorrect(newStreak: number): number {
-  return POINTS_PER_CORRECT + (newStreak - 1) * STREAK_BONUS_STEP;
-}
 
 export interface SubmitInput {
   question: Question;
@@ -57,7 +49,7 @@ export interface SubmitInput {
 
 /**
  * Enregistre une réponse et renvoie un NOUVEL état (immuable).
- * Bonne réponse → série +1 et points bonifiés ; mauvaise → série remise à 0.
+ * Bonne réponse → +1 au score et série +1 ; mauvaise → série remise à 0.
  */
 export function recordAnswer(
   state: SessionState,
@@ -65,7 +57,6 @@ export function recordAnswer(
 ): SessionState {
   const isCorrect = given === question.answer;
   const streak = isCorrect ? state.streak + 1 : 0;
-  const gained = isCorrect ? pointsForCorrect(streak) : 0;
 
   const record: AnswerRecord = {
     a: question.a,
@@ -83,7 +74,6 @@ export function recordAnswer(
     bestStreak: Math.max(state.bestStreak, streak),
     correctCount: state.correctCount + (isCorrect ? 1 : 0),
     totalCount: state.totalCount + 1,
-    score: state.score + gained,
   };
 }
 

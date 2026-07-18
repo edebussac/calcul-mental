@@ -7,7 +7,6 @@ import { Keypad } from "@/components/Keypad";
 import { haptic } from "@/lib/haptics";
 import { useProfile } from "@/lib/profile";
 import {
-  accuracy,
   initialSession,
   recordAnswer,
   type SessionState,
@@ -28,6 +27,25 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/** Temps moyen (ms) sur les bonnes réponses. */
+function averageMs(session: SessionState): number {
+  const correct = session.answers.filter((a) => a.isCorrect);
+  if (correct.length === 0) return 0;
+  return correct.reduce((sum, a) => sum + a.responseMs, 0) / correct.length;
+}
+
+/** Temps de la réponse la plus rapide (ms). */
+function fastestMs(session: SessionState): number {
+  const correct = session.answers.filter((a) => a.isCorrect);
+  if (correct.length === 0) return 0;
+  return Math.min(...correct.map((a) => a.responseMs));
+}
+
+function formatSeconds(ms: number): string {
+  if (ms <= 0) return "—";
+  return `${(ms / 1000).toFixed(1)} s`;
 }
 
 export function Game({ operation }: { operation: Operation }) {
@@ -161,7 +179,6 @@ export function Game({ operation }: { operation: Operation }) {
         operation,
         level: 1,
         durationSeconds: DURATION_SECONDS - timeLeft,
-        score: finished.score,
         answers: finished.answers,
       }),
     })
@@ -224,7 +241,7 @@ export function Game({ operation }: { operation: Operation }) {
         </div>
       </div>
 
-      <div className="mb-6 flex items-center justify-around text-muted">
+      <div className="mb-6 flex items-center justify-center gap-12 text-muted">
         <span
           data-testid="correct"
           className="flex items-center gap-2 text-lg font-semibold text-text"
@@ -237,13 +254,6 @@ export function Game({ operation }: { operation: Operation }) {
           className="flex items-center gap-2 text-lg font-semibold text-text"
         >
           ◷ {formatTime(timeLeft)}
-        </span>
-        <span
-          data-testid="streak"
-          className="flex items-center gap-2 text-lg font-semibold text-text"
-          aria-label="Série en cours"
-        >
-          🔥 {session.streak}
         </span>
       </div>
 
@@ -279,16 +289,15 @@ function ResultScreen({
         </span>
       </div>
 
-      <dl className="grid w-full grid-cols-3 gap-3">
-        <Stat label="Précision" value={`${accuracy(session)}%`} />
-        <Stat label="Série max" value={String(session.bestStreak)} />
-        <Stat label="Score" value={String(session.score)} />
+      <dl className="grid w-full grid-cols-2 gap-3">
+        <Stat label="Temps moyen" value={formatSeconds(averageMs(session))} />
+        <Stat label="Meilleur temps" value={formatSeconds(fastestMs(session))} />
       </dl>
 
       <p className="h-5 text-sm text-muted">
         {saveState === "saving" && "Enregistrement…"}
-        {saveState === "error" && "⚠︎ Score non enregistré (hors ligne ?)"}
-        {saveState === "done" && "Score enregistré ✓"}
+        {saveState === "error" && "⚠︎ Résultat non enregistré (hors ligne ?)"}
+        {saveState === "done" && "Résultat enregistré ✓"}
       </p>
 
       <div className="flex w-full flex-col gap-3">

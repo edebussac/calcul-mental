@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   accuracy,
   initialSession,
-  pointsForCorrect,
   recordAnswer,
   type SessionState,
 } from "@/lib/game/engine";
@@ -72,25 +71,16 @@ describe("recordAnswer", () => {
   });
 });
 
-describe("score", () => {
-  it("bonifie les points selon la série", () => {
-    expect(pointsForCorrect(1)).toBe(10);
-    expect(pointsForCorrect(2)).toBe(12);
-    expect(pointsForCorrect(3)).toBe(14);
-  });
-
-  it("accumule le score attendu sur une série de bonnes réponses", () => {
+describe("score = nombre de bonnes réponses", () => {
+  it("compte 1 par bonne réponse, 0 pour une mauvaise", () => {
     const state = play([
-      { q: q(2, 2), given: 4 }, // +10
-      { q: q(3, 3), given: 9 }, // +12
-      { q: q(4, 4), given: 16 }, // +14
+      { q: q(2, 2), given: 4 }, // ok
+      { q: q(3, 3), given: 9 }, // ok
+      { q: q(4, 4), given: 15 }, // faux
+      { q: q(5, 5), given: 25 }, // ok
     ]);
-    expect(state.score).toBe(36);
-  });
-
-  it("n'accorde aucun point pour une mauvaise réponse", () => {
-    const state = play([{ q: q(2, 2), given: 5 }]);
-    expect(state.score).toBe(0);
+    expect(state.correctCount).toBe(3);
+    expect(state.totalCount).toBe(4);
   });
 });
 

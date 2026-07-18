@@ -74,14 +74,14 @@ describe("sessions service", () => {
       profileId: profile.id,
       operation: "multiplication",
       durationSeconds: 60,
-      score: 22,
       answers,
     });
 
     expect(session.id).toBeGreaterThan(0);
     expect(session.totalQuestions).toBe(3);
     expect(session.correctCount).toBe(2);
-    expect(session.score).toBe(22);
+    // Le score EST le nombre de bonnes réponses.
+    expect(session.score).toBe(2);
     expect(session.operation).toBe("multiplication");
 
     const recent = await recentSessions(db, profile.id);
@@ -89,23 +89,29 @@ describe("sessions service", () => {
     expect(recent[0].id).toBe(session.id);
   });
 
-  it("agrège le meilleur score par opération", async () => {
+  it("agrège le meilleur score (max de bonnes réponses) par opération", async () => {
     const profile = await getOrCreateProfile(db, "Tom");
     const base = {
       profileId: profile.id,
       operation: "multiplication" as const,
       durationSeconds: 60,
-      answers: [answer(2, 2, 4)],
     };
-    await saveSession(db, { ...base, score: 30 });
-    await saveSession(db, { ...base, score: 55 });
-    await saveSession(db, { ...base, score: 41 });
+    // 1, puis 3, puis 2 bonnes réponses → record = 3.
+    await saveSession(db, { ...base, answers: [answer(2, 2, 4)] });
+    await saveSession(db, {
+      ...base,
+      answers: [answer(2, 2, 4), answer(3, 3, 9), answer(4, 4, 16)],
+    });
+    await saveSession(db, {
+      ...base,
+      answers: [answer(2, 2, 4), answer(3, 3, 9)],
+    });
 
     const scores = await bestScores(db, profile.id);
     expect(scores).toEqual([
-      { operation: "multiplication", bestScore: 55, plays: 3 },
+      { operation: "multiplication", bestScore: 3, plays: 3 },
     ]);
-    expect(await bestScoreFor(db, profile.id, "multiplication")).toBe(55);
+    expect(await bestScoreFor(db, profile.id, "multiplication")).toBe(3);
   });
 
   it("renvoie 0 comme meilleur score sans partie jouée", async () => {

@@ -16,7 +16,6 @@ const validBody = {
   operation: "multiplication",
   level: 1,
   durationSeconds: 60,
-  score: 40,
   answers: [validAnswer],
 };
 
@@ -39,7 +38,7 @@ describe("parseSaveSessionInput", () => {
     ["profileId manquant", { ...validBody, profileId: "x" }],
     ["operation inconnue", { ...validBody, operation: "modulo" }],
     ["answers absent", { ...validBody, answers: undefined }],
-    ["score non numérique", { ...validBody, score: "haut" }],
+    ["durationSeconds manquant", { ...validBody, durationSeconds: "x" }],
   ])("rejette : %s", (_label, body) => {
     expect(parseSaveSessionInput(body)).toBeNull();
   });
