@@ -18,9 +18,11 @@ import { OPERATION_CONFIG, type Operation } from "@/lib/game/operations";
 // Durée d'un round (s). Abaissée en e2e via NEXT_PUBLIC_ROUND_SECONDS.
 const DURATION_SECONDS = Number(process.env.NEXT_PUBLIC_ROUND_SECONDS) || 60;
 const FEEDBACK_MS = 350;
+// Réponses ≤ 100 (10×10) → 3 chiffres max.
+const MAX_ANSWER_DIGITS = 3;
 
 type Phase = "playing" | "finished";
-type Feedback = "correct" | "wrong" | null;
+type Feedback = "correct" | null;
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -91,22 +93,22 @@ export function Game({ operation }: { operation: Operation }) {
     return () => clearInterval(id);
   }, [phase]);
 
-  const submit = useCallback(
+  // Appelé UNIQUEMENT quand la bonne réponse est trouvée : vert + vibration,
+  // puis on passe au calcul suivant. Aucune sanction en cas d'erreur.
+  const markCorrect = useCallback(
     (q: Question, value: string) => {
       lockRef.current = true;
-      const given = Number(value);
       const responseMs = Date.now() - questionStart.current;
       const nextSession = recordAnswer(sessionRef.current, {
         question: q,
-        given,
+        given: q.answer,
         responseMs,
       });
       sessionRef.current = nextSession;
       setSession(nextSession);
       setInput(value);
-      const isCorrect = given === q.answer;
-      if (isCorrect) haptic(); // vibration à chaque bonne réponse
-      setFeedback(isCorrect ? "correct" : "wrong");
+      haptic(); // vibration à chaque bonne réponse
+      setFeedback("correct");
       setTimeout(() => {
         setFeedback(null);
         if (phaseRef.current === "playing") {
@@ -121,21 +123,23 @@ export function Game({ operation }: { operation: Operation }) {
   const handleDigit = useCallback(
     (digit: number) => {
       if (lockRef.current || phase !== "playing" || feedback || !question) return;
-      const expectedLen = String(question.answer).length;
       const next = input + String(digit);
-      if (next.length > expectedLen) return;
-      if (next.length < expectedLen) {
-        setInput(next);
-        return;
-      }
-      submit(question, next);
+      if (next.length > MAX_ANSWER_DIGITS) return; // borne la saisie
+      setInput(next);
+      // On ne valide QUE si le calcul est trouvé ; sinon on laisse écrire.
+      if (Number(next) === question.answer) markCorrect(question, next);
     },
-    [phase, feedback, question, input, submit],
+    [phase, feedback, question, input, markCorrect],
   );
 
   const handleDelete = useCallback(() => {
-    if (phase !== "playing" || feedback) return;
+    if (lockRef.current || phase !== "playing" || feedback) return;
     setInput((v) => v.slice(0, -1));
+  }, [phase, feedback]);
+
+  const handleReset = useCallback(() => {
+    if (lockRef.current || phase !== "playing" || feedback) return;
+    setInput("");
   }, [phase, feedback]);
 
   // Sauvegarde de la session terminée (une seule fois).
@@ -187,12 +191,8 @@ export function Game({ operation }: { operation: Operation }) {
     );
   }
 
-  const inputBorder =
-    feedback === "correct"
-      ? "text-accent-strong"
-      : feedback === "wrong"
-        ? "text-danger"
-        : "text-text";
+  // Vert quand trouvé, sinon couleur d'écriture normale (jamais de rouge).
+  const inputColor = feedback === "correct" ? "text-accent-strong" : "text-text";
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-6 pb-8 pt-6">
@@ -218,7 +218,7 @@ export function Game({ operation }: { operation: Operation }) {
 
         <div
           data-testid="answer"
-          className={`neu-inset flex h-24 w-24 items-center justify-center rounded-2xl text-4xl font-bold ${inputBorder}`}
+          className={`neu-inset flex h-24 w-24 items-center justify-center rounded-2xl text-4xl font-bold ${inputColor}`}
         >
           {input === "" ? <span className="text-muted">?</span> : input}
         </div>
@@ -247,7 +247,12 @@ export function Game({ operation }: { operation: Operation }) {
         </span>
       </div>
 
-      <Keypad onDigit={handleDigit} onDelete={handleDelete} disabled={!!feedback} />
+      <Keypad
+        onDigit={handleDigit}
+        onDelete={handleDelete}
+        onReset={handleReset}
+        disabled={!!feedback}
+      />
     </main>
   );
 }

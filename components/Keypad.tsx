@@ -1,26 +1,38 @@
 "use client";
 
-type Key = number | "back" | null;
+type Key = number | "back" | "reset";
 
 const LAYOUT: Key[][] = [
   [7, 8, 9],
   [4, 5, 6],
   [1, 2, 3],
-  ["back", 0, null],
+  ["reset", 0, "back"],
 ];
 
 export interface KeypadProps {
   onDigit: (digit: number) => void;
   onDelete: () => void;
+  onReset: () => void;
   disabled?: boolean;
 }
 
-export function Keypad({ onDigit, onDelete, disabled }: KeypadProps) {
+export function Keypad({ onDigit, onDelete, onReset, disabled }: KeypadProps) {
   return (
     <div className="grid grid-cols-3 gap-3">
-      {LAYOUT.flat().map((key, i) => {
-        if (key === null) {
-          return <div key={`spacer-${i}`} aria-hidden />;
+      {LAYOUT.flat().map((key) => {
+        if (key === "reset") {
+          return (
+            <button
+              key="reset"
+              type="button"
+              aria-label="Tout effacer"
+              disabled={disabled}
+              onClick={onReset}
+              className="neu-pressable rounded-2xl py-5 text-xl font-semibold text-muted disabled:opacity-50"
+            >
+              C
+            </button>
+          );
         }
         if (key === "back") {
           return (
