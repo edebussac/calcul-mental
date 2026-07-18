@@ -1,0 +1,323 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Keypad } from "@/components/Keypad";
+import { haptic } from "@/lib/haptics";
+import { useProfile } from "@/lib/profile";
+import {
+  accuracy,
+  initialSession,
+  recordAnswer,
+  type SessionState,
+} from "@/lib/game/engine";
+import { generateQuestion, type Question } from "@/lib/game/generator";
+import { OPERATION_CONFIG, type Operation } from "@/lib/game/operations";
+
+// Durée d'un round (s). Abaissée en e2e via NEXT_PUBLIC_ROUND_SECONDS.
+const DURATION_SECONDS = Number(process.env.NEXT_PUBLIC_ROUND_SECONDS) || 60;
+const FEEDBACK_MS = 350;
+
+type Phase = "playing" | "finished";
+type Feedback = "correct" | "wrong" | null;
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+export function Game({ operation }: { operation: Operation }) {
+  const router = useRouter();
+  const { profile, ready } = useProfile();
+  const config = OPERATION_CONFIG[operation];
+
+  const [session, setSession] = useState<SessionState>(initialSession);
+  const [question, setQuestion] = useState<Question | null>(null);
+  const [input, setInput] = useState("");
+  const [timeLeft, setTimeLeft] = useState(DURATION_SECONDS);
+  const [phase, setPhase] = useState<Phase>("playing");
+  const [feedback, setFeedback] = useState<Feedback>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "done" | "error">(
+    "idle",
+  );
+
+  const questionStart = useRef(0);
+  const phaseRef = useRef<Phase>(phase);
+  const sessionRef = useRef<SessionState>(session);
+  const savedRef = useRef(false);
+  // Verrou SYNCHRONE : empêche une 2e validation avant que le feedback (état
+  // async) ne désactive le pavé — sinon un tap rapide compte une réponse en trop.
+  const lockRef = useRef(false);
+
+  // Miroirs pour les closures (timer, setTimeout) sans lire de ref au rendu.
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  const nextQuestion = useCallback(() => {
+    setQuestion(generateQuestion(operation, { min: 1, max: 10 }));
+    setInput("");
+    questionStart.current = Date.now();
+  }, [operation]);
+
+  // Redirige vers l'accueil si aucun profil sélectionné.
+  useEffect(() => {
+    if (ready && !profile) router.replace("/");
+  }, [ready, profile, router]);
+
+  // Première question.
+  useEffect(() => {
+    nextQuestion();
+  }, [nextQuestion]);
+
+  // Décompte du timer.
+  useEffect(() => {
+    if (phase !== "playing") return;
+    const id = setInterval(() => {
+      setTimeLeft((t) => {
+        if (t <= 1) {
+          clearInterval(id);
+          setPhase("finished");
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [phase]);
+
+  const submit = useCallback(
+    (q: Question, value: string) => {
+      lockRef.current = true;
+      const given = Number(value);
+      const responseMs = Date.now() - questionStart.current;
+      const nextSession = recordAnswer(sessionRef.current, {
+        question: q,
+        given,
+        responseMs,
+      });
+      sessionRef.current = nextSession;
+      setSession(nextSession);
+      setInput(value);
+      const isCorrect = given === q.answer;
+      if (isCorrect) haptic(); // vibration à chaque bonne réponse
+      setFeedback(isCorrect ? "correct" : "wrong");
+      setTimeout(() => {
+        setFeedback(null);
+        if (phaseRef.current === "playing") {
+          nextQuestion();
+          lockRef.current = false;
+        }
+      }, FEEDBACK_MS);
+    },
+    [nextQuestion],
+  );
+
+  const handleDigit = useCallback(
+    (digit: number) => {
+      if (lockRef.current || phase !== "playing" || feedback || !question) return;
+      const expectedLen = String(question.answer).length;
+      const next = input + String(digit);
+      if (next.length > expectedLen) return;
+      if (next.length < expectedLen) {
+        setInput(next);
+        return;
+      }
+      submit(question, next);
+    },
+    [phase, feedback, question, input, submit],
+  );
+
+  const handleDelete = useCallback(() => {
+    if (phase !== "playing" || feedback) return;
+    setInput((v) => v.slice(0, -1));
+  }, [phase, feedback]);
+
+  // Sauvegarde de la session terminée (une seule fois).
+  useEffect(() => {
+    if (phase !== "finished" || savedRef.current) return;
+    const finished = sessionRef.current;
+    if (!profile || finished.totalCount === 0) {
+      setSaveState("done");
+      savedRef.current = true;
+      return;
+    }
+    savedRef.current = true;
+    setSaveState("saving");
+    fetch("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: profile.id,
+        operation,
+        level: 1,
+        durationSeconds: DURATION_SECONDS - timeLeft,
+        score: finished.score,
+        answers: finished.answers,
+      }),
+    })
+      .then((r) => setSaveState(r.ok ? "done" : "error"))
+      .catch(() => setSaveState("error"));
+  }, [phase, profile, operation, timeLeft]);
+
+  const restart = () => {
+    savedRef.current = false;
+    lockRef.current = false;
+    setSaveState("idle");
+    setSession(initialSession);
+    sessionRef.current = initialSession;
+    setTimeLeft(DURATION_SECONDS);
+    setFeedback(null);
+    setPhase("playing");
+    nextQuestion();
+  };
+
+  if (phase === "finished") {
+    return (
+      <ResultScreen
+        session={session}
+        saveState={saveState}
+        onRestart={restart}
+      />
+    );
+  }
+
+  const inputBorder =
+    feedback === "correct"
+      ? "text-accent-strong"
+      : feedback === "wrong"
+        ? "text-danger"
+        : "text-text";
+
+  return (
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col px-6 pb-8 pt-6">
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            aria-label="Quitter"
+            className="neu-pressable flex h-9 w-9 items-center justify-center rounded-full text-muted"
+          >
+            ✕
+          </Link>
+          <h1 className="text-xl font-bold">{config.label}</h1>
+        </div>
+      </header>
+
+      <div className="flex flex-1 flex-col items-center justify-center gap-10">
+        <p data-testid="question" className="text-5xl font-extrabold tracking-tight">
+          <span data-testid="operand-a">{question?.a}</span>
+          <span className="mx-3 text-accent">{config.symbol}</span>
+          <span data-testid="operand-b">{question?.b}</span>
+        </p>
+
+        <div
+          data-testid="answer"
+          className={`neu-inset flex h-24 w-24 items-center justify-center rounded-2xl text-4xl font-bold ${inputBorder}`}
+        >
+          {input === "" ? <span className="text-muted">?</span> : input}
+        </div>
+      </div>
+
+      <div className="mb-6 flex items-center justify-around text-muted">
+        <span
+          data-testid="correct"
+          className="flex items-center gap-2 text-lg font-semibold text-text"
+          aria-label="Bonnes réponses"
+        >
+          ✓ {session.correctCount}
+        </span>
+        <span
+          data-testid="timer"
+          className="flex items-center gap-2 text-lg font-semibold text-text"
+        >
+          ◷ {formatTime(timeLeft)}
+        </span>
+        <span
+          data-testid="streak"
+          className="flex items-center gap-2 text-lg font-semibold text-text"
+          aria-label="Série en cours"
+        >
+          🔥 {session.streak}
+        </span>
+      </div>
+
+      <Keypad onDigit={handleDigit} onDelete={handleDelete} disabled={!!feedback} />
+    </main>
+  );
+}
+
+function ResultScreen({
+  session,
+  saveState,
+  onRestart,
+}: {
+  session: SessionState;
+  saveState: "idle" | "saving" | "done" | "error";
+  onRestart: () => void;
+}) {
+  return (
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-8 px-6 py-10 text-center">
+      <h1 className="text-2xl font-bold">Terminé&nbsp;!</h1>
+
+      <div className="neu-raised flex flex-col gap-1 rounded-3xl px-12 py-8">
+        <span data-testid="final-score" className="text-7xl font-extrabold">
+          {session.correctCount}
+        </span>
+        <span className="text-sm uppercase tracking-wide text-muted">
+          réponses justes en 1 min
+        </span>
+      </div>
+
+      <dl className="grid w-full grid-cols-3 gap-3">
+        <Stat label="Précision" value={`${accuracy(session)}%`} />
+        <Stat label="Série max" value={String(session.bestStreak)} />
+        <Stat label="Score" value={String(session.score)} />
+      </dl>
+
+      <p className="h-5 text-sm text-muted">
+        {saveState === "saving" && "Enregistrement…"}
+        {saveState === "error" && "⚠︎ Score non enregistré (hors ligne ?)"}
+        {saveState === "done" && "Score enregistré ✓"}
+      </p>
+
+      <div className="flex w-full flex-col gap-3">
+        <button
+          type="button"
+          onClick={onRestart}
+          className="neu-pressable rounded-2xl py-4 text-lg font-semibold text-accent-strong"
+        >
+          Rejouer
+        </button>
+        <div className="flex gap-3">
+          <Link
+            href="/scores"
+            className="neu-pressable flex-1 rounded-2xl py-4 text-center font-semibold"
+          >
+            Mes scores
+          </Link>
+          <Link
+            href="/"
+            className="neu-pressable flex-1 rounded-2xl py-4 text-center font-semibold"
+          >
+            Accueil
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="neu-raised flex flex-col items-center gap-1 rounded-2xl py-4">
+      <dd className="text-xl font-bold">{value}</dd>
+      <dt className="text-xs text-muted">{label}</dt>
+    </div>
+  );
+}
