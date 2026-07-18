@@ -67,6 +67,9 @@ export function Game({ operation }: { operation: Operation }) {
   const phaseRef = useRef<Phase>(phase);
   const sessionRef = useRef<SessionState>(session);
   const savedRef = useRef(false);
+  // Source de vérité SYNCHRONE de la saisie : évite qu'un 2e appui rapide,
+  // survenu avant le re-rendu, reparte de l'ancienne valeur et perde un chiffre.
+  const inputRef = useRef("");
   // Verrou SYNCHRONE : empêche une 2e validation avant que le feedback (état
   // async) ne désactive le pavé — sinon un tap rapide compte une réponse en trop.
   const lockRef = useRef(false);
@@ -81,6 +84,7 @@ export function Game({ operation }: { operation: Operation }) {
 
   const nextQuestion = useCallback(() => {
     setQuestion(generateQuestion(operation, { min: 1, max: 10 }));
+    inputRef.current = "";
     setInput("");
     questionStart.current = Date.now();
   }, [operation]);
@@ -124,6 +128,7 @@ export function Game({ operation }: { operation: Operation }) {
       });
       sessionRef.current = nextSession;
       setSession(nextSession);
+      inputRef.current = value;
       setInput(value);
       haptic(); // vibration à chaque bonne réponse
       setFeedback("correct");
@@ -140,25 +145,31 @@ export function Game({ operation }: { operation: Operation }) {
 
   const handleDigit = useCallback(
     (digit: number) => {
-      if (lockRef.current || phase !== "playing" || feedback || !question) return;
-      const next = input + String(digit);
+      if (lockRef.current || phaseRef.current !== "playing" || !question) return;
+      // Lecture/écriture SYNCHRONE via la ref : deux appuis rapprochés ne se
+      // marchent plus dessus (plus de chiffre perdu).
+      const next = inputRef.current + String(digit);
       if (next.length > MAX_ANSWER_DIGITS) return; // borne la saisie
+      inputRef.current = next;
       setInput(next);
       // On ne valide QUE si le calcul est trouvé ; sinon on laisse écrire.
       if (Number(next) === question.answer) markCorrect(question, next);
     },
-    [phase, feedback, question, input, markCorrect],
+    [question, markCorrect],
   );
 
   const handleDelete = useCallback(() => {
-    if (lockRef.current || phase !== "playing" || feedback) return;
-    setInput((v) => v.slice(0, -1));
-  }, [phase, feedback]);
+    if (lockRef.current || phaseRef.current !== "playing") return;
+    const next = inputRef.current.slice(0, -1);
+    inputRef.current = next;
+    setInput(next);
+  }, []);
 
   const handleReset = useCallback(() => {
-    if (lockRef.current || phase !== "playing" || feedback) return;
+    if (lockRef.current || phaseRef.current !== "playing") return;
+    inputRef.current = "";
     setInput("");
-  }, [phase, feedback]);
+  }, []);
 
   // Sauvegarde de la session terminée (une seule fois).
   useEffect(() => {
@@ -189,6 +200,7 @@ export function Game({ operation }: { operation: Operation }) {
   const restart = () => {
     savedRef.current = false;
     lockRef.current = false;
+    inputRef.current = "";
     setSaveState("idle");
     setSession(initialSession);
     sessionRef.current = initialSession;
