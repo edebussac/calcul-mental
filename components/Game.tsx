@@ -25,6 +25,9 @@ import { OPERATION_CONFIG, type Operation } from "@/lib/game/operations";
 // Durée d'un round (s). Abaissée en e2e via NEXT_PUBLIC_ROUND_SECONDS.
 const DURATION_SECONDS = Number(process.env.NEXT_PUBLIC_ROUND_SECONDS) || 60;
 const FEEDBACK_MS = 350;
+// Délai avant que les boutons de l'écran de résultat deviennent cliquables :
+// évite un tap accidentel (dernier appui du round) sur "Rejouer"/"Accueil"/…
+const RESULT_LOCK_MS = 500;
 // Réponses ≤ 100 (10×10) → 3 chiffres max.
 const MAX_ANSWER_DIGITS = 3;
 
@@ -334,6 +337,17 @@ function ResultScreen({
   saveState: "idle" | "saving" | "done" | "error";
   onRestart: () => void;
 }) {
+  // Verrou anti-clic accidentel : les actions restent inertes un court instant.
+  const [locked, setLocked] = useState(true);
+  useEffect(() => {
+    const id = setTimeout(() => setLocked(false), RESULT_LOCK_MS);
+    return () => clearTimeout(id);
+  }, []);
+
+  const preventWhileLocked = (e: React.MouseEvent) => {
+    if (locked) e.preventDefault();
+  };
+
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-8 px-6 py-10 text-center">
       <h1 className="text-2xl font-bold">Terminé&nbsp;!</h1>
@@ -361,21 +375,26 @@ function ResultScreen({
       <div className="flex w-full flex-col gap-3">
         <button
           type="button"
+          disabled={locked}
           onClick={onRestart}
-          className="neu-pressable rounded-2xl py-4 text-lg font-semibold text-accent-strong"
+          className="neu-pressable rounded-2xl py-4 text-lg font-semibold text-accent-strong disabled:opacity-50"
         >
           Rejouer
         </button>
         <div className="flex gap-3">
           <Link
             href="/scores"
-            className="neu-pressable flex-1 rounded-2xl py-4 text-center font-semibold"
+            aria-disabled={locked}
+            onClick={preventWhileLocked}
+            className={`neu-pressable flex-1 rounded-2xl py-4 text-center font-semibold ${locked ? "opacity-50" : ""}`}
           >
             Mes scores
           </Link>
           <Link
             href="/"
-            className="neu-pressable flex-1 rounded-2xl py-4 text-center font-semibold"
+            aria-disabled={locked}
+            onClick={preventWhileLocked}
+            className={`neu-pressable flex-1 rounded-2xl py-4 text-center font-semibold ${locked ? "opacity-50" : ""}`}
           >
             Accueil
           </Link>
