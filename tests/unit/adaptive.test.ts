@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ADAPTIVE_PARAMS,
+  analyzeFacts,
   buildFactPool,
   confidence,
   difficulty,
@@ -127,5 +128,43 @@ describe("factToQuestion", () => {
     expect(q1).toMatchObject({ a: 3, b: 7, operation: "multiplication", answer: 21 });
     const q2 = factToQuestion({ a: 3, b: 7 }, () => 0.1); // swap
     expect(q2).toMatchObject({ a: 7, b: 3, answer: 21 });
+  });
+});
+
+describe("analyzeFacts", () => {
+  it("classe du moins au mieux maîtrisé (lent d'abord)", () => {
+    const stats: FactStat[] = [
+      { a: 2, b: 2, recentMs: Array(8).fill(1000) }, // rapide
+      { a: 3, b: 3, recentMs: Array(8).fill(6000) }, // lent
+      { a: 4, b: 4, recentMs: Array(8).fill(3500) }, // moyen
+    ];
+    const ranked = analyzeFacts(stats);
+    expect(ranked.map((f) => factKey(f.a, f.b))).toEqual([
+      factKey(3, 3),
+      factKey(4, 4),
+      factKey(2, 2),
+    ]);
+    expect(ranked[0].difficulty).toBeGreaterThan(ranked[2].difficulty);
+  });
+
+  it("exclut les faits jamais tentés", () => {
+    const stats: FactStat[] = [{ a: 2, b: 2, recentMs: [1000] }];
+    const ranked = analyzeFacts(stats);
+    expect(ranked).toHaveLength(1);
+  });
+
+  it("une mesure peu fiable (n=1) pèse moins qu'une confirmée (n=20)", () => {
+    const stats: FactStat[] = [
+      { a: 2, b: 2, recentMs: [6000] }, // lent mais 1 seule fois
+      { a: 3, b: 3, recentMs: Array(20).fill(6000) }, // lent, confirmé
+    ];
+    const ranked = analyzeFacts(stats);
+    expect(factKey(ranked[0].a, ranked[0].b)).toBe(factKey(3, 3));
+    expect(ranked[0].attempts).toBe(20);
+    expect(ranked[1].attempts).toBe(1);
+  });
+
+  it("renvoie une liste vide sans données", () => {
+    expect(analyzeFacts([])).toEqual([]);
   });
 });

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useProfile } from "@/lib/profile";
 import { OPERATION_CONFIG, type Operation } from "@/lib/game/operations";
+import { analyzeFacts, type FactAnalysis, type FactStat } from "@/lib/game/adaptive";
 
 interface BestScore {
   operation: Operation;
@@ -27,10 +28,15 @@ function formatDate(iso: string): string {
   });
 }
 
+function formatMs(ms: number): string {
+  return `${(ms / 1000).toFixed(1)} s`;
+}
+
 export default function ScoresPage() {
   const { profile, ready } = useProfile();
   const [scores, setScores] = useState<BestScore[] | null>(null);
   const [history, setHistory] = useState<SessionRow[] | null>(null);
+  const [weakFacts, setWeakFacts] = useState<FactAnalysis[] | null>(null);
 
   useEffect(() => {
     if (!ready || !profile) return;
@@ -42,6 +48,10 @@ export default function ScoresPage() {
       .then((r) => (r.ok ? r.json() : []))
       .then(setHistory)
       .catch(() => setHistory([]));
+    fetch(`/api/fact-stats?profileId=${profile.id}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((stats: FactStat[]) => setWeakFacts(analyzeFacts(stats).slice(0, 8)))
+      .catch(() => setWeakFacts([]));
   }, [ready, profile]);
 
   return (
@@ -130,6 +140,45 @@ export default function ScoresPage() {
                     {h.correctCount} bonne{h.correctCount > 1 ? "s" : ""} réponse
                     {h.correctCount > 1 ? "s" : ""}
                   </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* Calculs les moins maîtrisés */}
+      {profile && (
+        <section className="flex flex-col gap-2">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted">
+            Calculs à travailler
+          </h2>
+          {weakFacts === null ? (
+            <p className="text-muted">Chargement…</p>
+          ) : weakFacts.length === 0 ? (
+            <p className="text-muted">
+              Pas encore assez de données. Joue quelques parties de
+              multiplication&nbsp;!
+            </p>
+          ) : (
+            <ul className="neu-raised flex flex-col gap-4 rounded-3xl p-5">
+              {weakFacts.map((f) => (
+                <li key={`${f.a}x${f.b}`} className="flex flex-col gap-1">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-lg font-semibold">
+                      {f.a} × {f.b}
+                    </span>
+                    <span className="text-sm text-muted">
+                      {formatMs(f.avgMs)} · {f.attempts} essai
+                      {f.attempts > 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <div className="neu-inset h-2 w-full overflow-hidden rounded-full">
+                    <div
+                      className="h-full rounded-full bg-accent"
+                      style={{ width: `${Math.max(6, f.difficulty * 100)}%` }}
+                    />
+                  </div>
                 </li>
               ))}
             </ul>

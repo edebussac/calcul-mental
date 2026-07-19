@@ -124,7 +124,7 @@ export function reviewNeed(
 }
 
 /** Références de normalisation propres au joueur (repli sur seuils absolus). */
-function playerRefs(
+export function playerRefs(
   rts: number[],
   params: AdaptiveParams,
 ): { fastRefMs: number; slowRefMs: number } {
@@ -214,6 +214,58 @@ export function pickFact(
   }
   const last = jittered[jittered.length - 1].f;
   return { a: last.a, b: last.b };
+}
+
+/** Analyse d'un fait, pour affichage (classement des moins maîtrisés). */
+export interface FactAnalysis {
+  a: number;
+  b: number;
+  /** Nb de tentatives récentes prises en compte. */
+  attempts: number;
+  /** Temps moyen pondéré (EMA), en ms. */
+  avgMs: number;
+  /** Confiance 0..1 dans la mesure (peu de tentatives → peu fiable). */
+  confidence: number;
+  /** Difficulté finale 0..1 (confiance × difficulté brute) : le critère de tri. */
+  difficulty: number;
+  lastSeenDays?: number;
+}
+
+/**
+ * Classe les faits **déjà tentés** du moins au mieux maîtrisé, pour affichage
+ * (ex. « calculs à travailler »). Réutilise le même calcul de difficulté que
+ * `buildFactPool`, mais sans le bruit de sélection (jitter/plancher/révision) :
+ * ici on veut une mesure de maîtrise, pas une probabilité de tirage.
+ */
+export function analyzeFacts(
+  stats: FactStat[],
+  params: AdaptiveParams = ADAPTIVE_PARAMS,
+): FactAnalysis[] {
+  const withData = stats.filter((s) => s.recentMs.length > 0);
+  const rts = withData
+    .map((s) => emaResponseMs(s.recentMs, params.beta))
+    .filter((rt): rt is number => rt !== null);
+  const refs = playerRefs(rts, params);
+
+  const analyzed: FactAnalysis[] = withData.map((s) => {
+    const n = s.recentMs.length;
+    const rt = emaResponseMs(s.recentMs, params.beta)!;
+    const conf = confidence(n, params.confScale);
+    const diffBrute = difficulty(rt, refs.fastRefMs, refs.slowRefMs);
+    return {
+      a: s.a,
+      b: s.b,
+      attempts: n,
+      avgMs: rt,
+      confidence: conf,
+      difficulty: conf * diffBrute,
+      lastSeenDays: s.lastSeenDays,
+    };
+  });
+
+  return analyzed.sort(
+    (x, y) => y.difficulty - x.difficulty || y.avgMs - x.avgMs,
+  );
 }
 
 /** Construit une Question à partir d'un fait, ordre d'affichage randomisé. */
