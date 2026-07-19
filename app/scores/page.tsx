@@ -136,6 +136,31 @@ export default function ScoresPage() {
           )}
         </section>
       )}
+
+      {/* Export des données */}
+      {profile && (
+        <section className="flex flex-col gap-2">
+          <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted">
+            Exporter mes données
+          </h2>
+          <div className="flex gap-3">
+            <a
+              href={`/api/export?profileId=${profile.id}&format=json`}
+              download
+              className="neu-pressable flex-1 rounded-2xl py-4 text-center font-semibold"
+            >
+              JSON
+            </a>
+            <a
+              href={`/api/export?profileId=${profile.id}&format=csv`}
+              download
+              className="neu-pressable flex-1 rounded-2xl py-4 text-center font-semibold"
+            >
+              CSV
+            </a>
+          </div>
+        </section>
+      )}
     </main>
   );
 }

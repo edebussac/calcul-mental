@@ -135,6 +135,25 @@ function Home({
           })}
         </div>
       </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="px-1 text-sm font-semibold uppercase tracking-wide text-muted">
+          Entraînement ciblé
+        </h2>
+        <button
+          type="button"
+          onClick={() => router.push("/play/multiplication?mode=adaptive")}
+          className="neu-raised flex items-center justify-between rounded-3xl px-6 py-5 text-left active:opacity-90"
+        >
+          <span className="flex flex-col">
+            <span className="text-lg font-bold">Multiplication — points faibles</span>
+            <span className="text-sm text-muted">
+              Repropose plus souvent les calculs les plus lents
+            </span>
+          </span>
+          <span className="text-xl text-accent">✕</span>
+        </button>
+      </section>
     </main>
   );
 }

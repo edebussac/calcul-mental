@@ -12,6 +12,14 @@ import {
   type SessionState,
 } from "@/lib/game/engine";
 import { generateQuestion, type Question } from "@/lib/game/generator";
+import {
+  buildFactPool,
+  factKey,
+  factToQuestion,
+  pickFact,
+  type FactStat,
+  type WeightedFact,
+} from "@/lib/game/adaptive";
 import { OPERATION_CONFIG, type Operation } from "@/lib/game/operations";
 
 // Durée d'un round (s). Abaissée en e2e via NEXT_PUBLIC_ROUND_SECONDS.
@@ -48,7 +56,13 @@ function formatSeconds(ms: number): string {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
-export function Game({ operation }: { operation: Operation }) {
+export function Game({
+  operation,
+  adaptive = false,
+}: {
+  operation: Operation;
+  adaptive?: boolean;
+}) {
   const router = useRouter();
   const { profile, ready } = useProfile();
   const config = OPERATION_CONFIG[operation];
@@ -70,6 +84,9 @@ export function Game({ operation }: { operation: Operation }) {
   // Source de vérité SYNCHRONE de la saisie : évite qu'un 2e appui rapide,
   // survenu avant le re-rendu, reparte de l'ancienne valeur et perde un chiffre.
   const inputRef = useRef("");
+  // Mode adaptatif : pool pondéré + faits récemment posés (anti-répétition).
+  const poolRef = useRef<WeightedFact[] | null>(null);
+  const recentlyAskedRef = useRef<string[]>([]);
   // Verrou SYNCHRONE : empêche une 2e validation avant que le feedback (état
   // async) ne désactive le pavé — sinon un tap rapide compte une réponse en trop.
   const lockRef = useRef(false);
@@ -82,12 +99,40 @@ export function Game({ operation }: { operation: Operation }) {
     sessionRef.current = session;
   }, [session]);
 
+  // Charge l'historique et construit le pool pondéré (mode adaptatif).
+  useEffect(() => {
+    if (!adaptive || !ready || !profile) return;
+    let cancelled = false;
+    fetch(`/api/fact-stats?profileId=${profile.id}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((stats: FactStat[]) => {
+        if (!cancelled) poolRef.current = buildFactPool(stats);
+      })
+      .catch(() => {
+        /* repli : tirage uniforme */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [adaptive, ready, profile]);
+
   const nextQuestion = useCallback(() => {
-    setQuestion(generateQuestion(operation, { min: 1, max: 10 }));
+    const pool = poolRef.current;
+    let q: Question;
+    if (adaptive && pool && pool.length > 0) {
+      // Points faibles : tirage pondéré, en évitant les 2 derniers faits.
+      const fact = pickFact(pool, Math.random, recentlyAskedRef.current);
+      const key = factKey(fact.a, fact.b);
+      recentlyAskedRef.current = [key, ...recentlyAskedRef.current].slice(0, 2);
+      q = factToQuestion(fact);
+    } else {
+      q = generateQuestion(operation, { min: 1, max: 10 });
+    }
+    setQuestion(q);
     inputRef.current = "";
     setInput("");
     questionStart.current = Date.now();
-  }, [operation]);
+  }, [operation, adaptive]);
 
   // Redirige vers l'accueil si aucun profil sélectionné.
   useEffect(() => {
@@ -190,12 +235,13 @@ export function Game({ operation }: { operation: Operation }) {
         operation,
         level: 1,
         durationSeconds: DURATION_SECONDS - timeLeft,
+        mode: adaptive ? "adaptive" : "classic",
         answers: finished.answers,
       }),
     })
       .then((r) => setSaveState(r.ok ? "done" : "error"))
       .catch(() => setSaveState("error"));
-  }, [phase, profile, operation, timeLeft]);
+  }, [phase, profile, operation, timeLeft, adaptive]);
 
   const restart = () => {
     savedRef.current = false;

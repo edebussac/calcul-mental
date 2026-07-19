@@ -33,6 +33,11 @@ export const sessions = pgTable("sessions", {
   totalQuestions: integer("total_questions").notNull(),
   correctCount: integer("correct_count").notNull(),
   score: integer("score").notNull(),
+  // Mode de sélection des questions (analyse) : classique (aléatoire) ou adaptatif.
+  mode: varchar("mode", { length: 16 })
+    .$type<"classic" | "adaptive">()
+    .notNull()
+    .default("classic"),
 });
 
 export const answers = pgTable("answers", {

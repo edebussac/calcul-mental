@@ -63,12 +63,14 @@ export function parseSaveSessionInput(body: unknown): SaveSessionInput | null {
   }
 
   const level = isFiniteNumber(b.level) ? b.level : 1;
+  const mode = b.mode === "adaptive" ? "adaptive" : "classic";
 
   return {
     profileId: b.profileId,
     operation: b.operation,
     level,
     durationSeconds: b.durationSeconds,
+    mode,
     answers,
   };
 }

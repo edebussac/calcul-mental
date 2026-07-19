@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "mode" varchar(16) DEFAULT 'classic' NOT NULL;

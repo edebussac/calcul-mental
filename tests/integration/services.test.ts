@@ -119,4 +119,18 @@ describe("sessions service", () => {
     expect(await bestScoreFor(db, profile.id, "multiplication")).toBe(0);
     expect(await bestScores(db, profile.id)).toEqual([]);
   });
+
+  it("persiste le mode (classic par défaut, adaptive si fourni)", async () => {
+    const profile = await getOrCreateProfile(db, "Nina");
+    const base = {
+      profileId: profile.id,
+      operation: "multiplication" as const,
+      durationSeconds: 60,
+      answers: [answer(2, 2, 4)],
+    };
+    const classic = await saveSession(db, base);
+    const adaptive = await saveSession(db, { ...base, mode: "adaptive" });
+    expect(classic.mode).toBe("classic");
+    expect(adaptive.mode).toBe("adaptive");
+  });
 });

@@ -8,11 +8,14 @@ import {
 import type { AnswerRecord } from "@/lib/game/engine";
 import type { Operation } from "@/lib/game/operations";
 
+export type SessionMode = "classic" | "adaptive";
+
 export interface SaveSessionInput {
   profileId: number;
   operation: Operation;
   level?: number;
   durationSeconds: number;
+  mode?: SessionMode;
   answers: AnswerRecord[];
 }
 
@@ -40,6 +43,7 @@ export async function saveSession(
         totalQuestions,
         correctCount,
         score: correctCount, // le score EST le nombre de bonnes réponses
+        mode: input.mode ?? "classic",
       })
       .returning();
 
