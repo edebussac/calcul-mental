@@ -162,25 +162,31 @@ export default function ScoresPage() {
             </p>
           ) : (
             <ul className="neu-raised flex flex-col gap-4 rounded-3xl p-5">
-              {weakFacts.map((f) => (
-                <li key={`${f.a}x${f.b}`} className="flex flex-col gap-1">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-lg font-semibold">
-                      {f.a} × {f.b}
-                    </span>
-                    <span className="text-sm text-muted">
-                      {formatMs(f.avgMs)} · {f.attempts} essai
-                      {f.attempts > 1 ? "s" : ""}
-                    </span>
-                  </div>
-                  <div className="neu-inset h-2 w-full overflow-hidden rounded-full">
-                    <div
-                      className="h-full rounded-full bg-accent"
-                      style={{ width: `${Math.max(6, f.difficulty * 100)}%` }}
-                    />
-                  </div>
-                </li>
-              ))}
+              {weakFacts.map((f) => {
+                // Barre = temps de ce calcul relatif au plus lent affiché
+                // (simple repère visuel, aucune pondération).
+                const maxMs = Math.max(...weakFacts.map((w) => w.avgMs));
+                const width = maxMs > 0 ? Math.max(6, (f.avgMs / maxMs) * 100) : 6;
+                return (
+                  <li key={`${f.a}x${f.b}`} className="flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-lg font-semibold">
+                        {f.a} × {f.b}
+                      </span>
+                      <span className="text-sm text-muted">
+                        {formatMs(f.avgMs)} · {f.attempts} essai
+                        {f.attempts > 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="neu-inset h-2 w-full overflow-hidden rounded-full">
+                      <div
+                        className="h-full rounded-full bg-accent"
+                        style={{ width: `${width}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

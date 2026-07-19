@@ -132,11 +132,11 @@ describe("factToQuestion", () => {
 });
 
 describe("analyzeFacts", () => {
-  it("classe du moins au mieux maîtrisé (lent d'abord)", () => {
+  it("classe du plus lent au plus rapide (moyenne simple)", () => {
     const stats: FactStat[] = [
-      { a: 2, b: 2, recentMs: Array(8).fill(1000) }, // rapide
-      { a: 3, b: 3, recentMs: Array(8).fill(6000) }, // lent
-      { a: 4, b: 4, recentMs: Array(8).fill(3500) }, // moyen
+      { a: 2, b: 2, recentMs: [1000, 1000, 1000] }, // rapide, avg=1000
+      { a: 3, b: 3, recentMs: [6000, 6000] }, // lent, avg=6000
+      { a: 4, b: 4, recentMs: [3000, 4000] }, // moyen, avg=3500
     ];
     const ranked = analyzeFacts(stats);
     expect(ranked.map((f) => factKey(f.a, f.b))).toEqual([
@@ -144,34 +144,23 @@ describe("analyzeFacts", () => {
       factKey(4, 4),
       factKey(2, 2),
     ]);
-    expect(ranked[0].difficulty).toBeGreaterThan(ranked[2].difficulty);
+    expect(ranked[0].avgMs).toBe(6000);
+    expect(ranked[1].avgMs).toBe(3500);
+    expect(ranked[2].avgMs).toBe(1000);
+  });
+
+  it("n'applique aucune pondération : l'ordre des tentatives ne change pas la moyenne", () => {
+    const recent = [{ a: 5, b: 5, recentMs: [1000, 9000] }];
+    const old = [{ a: 5, b: 5, recentMs: [9000, 1000] }];
+    expect(analyzeFacts(recent)[0].avgMs).toBe(analyzeFacts(old)[0].avgMs);
+    expect(analyzeFacts(recent)[0].avgMs).toBe(5000); // moyenne arithmétique simple
   });
 
   it("exclut les faits jamais tentés", () => {
     const stats: FactStat[] = [{ a: 2, b: 2, recentMs: [1000] }];
     const ranked = analyzeFacts(stats);
     expect(ranked).toHaveLength(1);
-  });
-
-  it("à temps égal, départage par confiance (n=20 avant n=1)", () => {
-    const stats: FactStat[] = [
-      { a: 2, b: 2, recentMs: [6000] }, // lent mais 1 seule fois
-      { a: 3, b: 3, recentMs: Array(20).fill(6000) }, // lent, confirmé
-    ];
-    const ranked = analyzeFacts(stats);
-    expect(factKey(ranked[0].a, ranked[0].b)).toBe(factKey(3, 3));
-    expect(ranked[0].attempts).toBe(20);
-    expect(ranked[1].attempts).toBe(1);
-  });
-
-  it("le temps prime sur la confiance : un temps plus lent passe devant, même avec moins d'essais", () => {
-    const stats: FactStat[] = [
-      { a: 5, b: 5, recentMs: [8000] }, // très lent, n=1 (peu fiable)
-      { a: 6, b: 6, recentMs: Array(20).fill(2000) }, // rapide, n=20 (très fiable)
-    ];
-    const ranked = analyzeFacts(stats);
-    // Le temps (8000 > 2000) l'emporte sur la confiance : 5×5 devant.
-    expect(factKey(ranked[0].a, ranked[0].b)).toBe(factKey(5, 5));
+    expect(ranked[0].attempts).toBe(1);
   });
 
   it("renvoie une liste vide sans données", () => {

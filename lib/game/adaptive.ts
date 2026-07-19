@@ -220,52 +220,30 @@ export function pickFact(
 export interface FactAnalysis {
   a: number;
   b: number;
-  /** Nb de tentatives récentes prises en compte. */
+  /** Nb de tentatives récentes prises en compte (≤ 10, déjà limité en amont). */
   attempts: number;
-  /** Temps moyen pondéré (EMA), en ms : le critère de tri (mis en avant). */
+  /** Temps moyen SIMPLE (non pondéré) des tentatives récentes, en ms. */
   avgMs: number;
-  /** Confiance 0..1 dans la mesure (peu de tentatives → peu fiable). */
-  confidence: number;
-  /** Difficulté brute 0..1 (temps normalisé, sans pondération par la confiance). */
-  difficulty: number;
   lastSeenDays?: number;
 }
 
 /**
- * Classe les faits **déjà tentés** du plus lent au plus rapide (temps moyen
- * décroissant), pour affichage (ex. « calculs à travailler ») : le temps est
- * la donnée mise en avant. À temps égal, départage par confiance (plus de
- * tentatives confirmées d'abord).
+ * Classe les faits **déjà tentés** du plus lent au plus rapide, par simple
+ * moyenne arithmétique de leurs tentatives récentes (pas de pondération par
+ * récence ni de confiance) — pour affichage (« calculs à travailler »).
  */
-export function analyzeFacts(
-  stats: FactStat[],
-  params: AdaptiveParams = ADAPTIVE_PARAMS,
-): FactAnalysis[] {
+export function analyzeFacts(stats: FactStat[]): FactAnalysis[] {
   const withData = stats.filter((s) => s.recentMs.length > 0);
-  const rts = withData
-    .map((s) => emaResponseMs(s.recentMs, params.beta))
-    .filter((rt): rt is number => rt !== null);
-  const refs = playerRefs(rts, params);
 
-  const analyzed: FactAnalysis[] = withData.map((s) => {
-    const n = s.recentMs.length;
-    // Arrondi à la ms : les entrées sont entières, un bruit flottant sur
-    // l'EMA ne doit pas fausser une égalité de temps (et le départage qui suit).
-    const rt = Math.round(emaResponseMs(s.recentMs, params.beta)!);
-    return {
-      a: s.a,
-      b: s.b,
-      attempts: n,
-      avgMs: rt,
-      confidence: confidence(n, params.confScale),
-      difficulty: difficulty(rt, refs.fastRefMs, refs.slowRefMs),
-      lastSeenDays: s.lastSeenDays,
-    };
-  });
+  const analyzed: FactAnalysis[] = withData.map((s) => ({
+    a: s.a,
+    b: s.b,
+    attempts: s.recentMs.length,
+    avgMs: s.recentMs.reduce((sum, ms) => sum + ms, 0) / s.recentMs.length,
+    lastSeenDays: s.lastSeenDays,
+  }));
 
-  return analyzed.sort(
-    (x, y) => y.avgMs - x.avgMs || y.confidence - x.confidence,
-  );
+  return analyzed.sort((x, y) => y.avgMs - x.avgMs);
 }
 
 /** Construit une Question à partir d'un fait, ordre d'affichage randomisé. */
