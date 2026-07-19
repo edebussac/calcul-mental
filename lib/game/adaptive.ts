@@ -222,20 +222,20 @@ export interface FactAnalysis {
   b: number;
   /** Nb de tentatives récentes prises en compte. */
   attempts: number;
-  /** Temps moyen pondéré (EMA), en ms. */
+  /** Temps moyen pondéré (EMA), en ms : le critère de tri (mis en avant). */
   avgMs: number;
   /** Confiance 0..1 dans la mesure (peu de tentatives → peu fiable). */
   confidence: number;
-  /** Difficulté finale 0..1 (confiance × difficulté brute) : le critère de tri. */
+  /** Difficulté brute 0..1 (temps normalisé, sans pondération par la confiance). */
   difficulty: number;
   lastSeenDays?: number;
 }
 
 /**
- * Classe les faits **déjà tentés** du moins au mieux maîtrisé, pour affichage
- * (ex. « calculs à travailler »). Réutilise le même calcul de difficulté que
- * `buildFactPool`, mais sans le bruit de sélection (jitter/plancher/révision) :
- * ici on veut une mesure de maîtrise, pas une probabilité de tirage.
+ * Classe les faits **déjà tentés** du plus lent au plus rapide (temps moyen
+ * décroissant), pour affichage (ex. « calculs à travailler ») : le temps est
+ * la donnée mise en avant. À temps égal, départage par confiance (plus de
+ * tentatives confirmées d'abord).
  */
 export function analyzeFacts(
   stats: FactStat[],
@@ -249,22 +249,22 @@ export function analyzeFacts(
 
   const analyzed: FactAnalysis[] = withData.map((s) => {
     const n = s.recentMs.length;
-    const rt = emaResponseMs(s.recentMs, params.beta)!;
-    const conf = confidence(n, params.confScale);
-    const diffBrute = difficulty(rt, refs.fastRefMs, refs.slowRefMs);
+    // Arrondi à la ms : les entrées sont entières, un bruit flottant sur
+    // l'EMA ne doit pas fausser une égalité de temps (et le départage qui suit).
+    const rt = Math.round(emaResponseMs(s.recentMs, params.beta)!);
     return {
       a: s.a,
       b: s.b,
       attempts: n,
       avgMs: rt,
-      confidence: conf,
-      difficulty: conf * diffBrute,
+      confidence: confidence(n, params.confScale),
+      difficulty: difficulty(rt, refs.fastRefMs, refs.slowRefMs),
       lastSeenDays: s.lastSeenDays,
     };
   });
 
   return analyzed.sort(
-    (x, y) => y.difficulty - x.difficulty || y.avgMs - x.avgMs,
+    (x, y) => y.avgMs - x.avgMs || y.confidence - x.confidence,
   );
 }
 

@@ -153,7 +153,7 @@ describe("analyzeFacts", () => {
     expect(ranked).toHaveLength(1);
   });
 
-  it("une mesure peu fiable (n=1) pèse moins qu'une confirmée (n=20)", () => {
+  it("à temps égal, départage par confiance (n=20 avant n=1)", () => {
     const stats: FactStat[] = [
       { a: 2, b: 2, recentMs: [6000] }, // lent mais 1 seule fois
       { a: 3, b: 3, recentMs: Array(20).fill(6000) }, // lent, confirmé
@@ -162,6 +162,16 @@ describe("analyzeFacts", () => {
     expect(factKey(ranked[0].a, ranked[0].b)).toBe(factKey(3, 3));
     expect(ranked[0].attempts).toBe(20);
     expect(ranked[1].attempts).toBe(1);
+  });
+
+  it("le temps prime sur la confiance : un temps plus lent passe devant, même avec moins d'essais", () => {
+    const stats: FactStat[] = [
+      { a: 5, b: 5, recentMs: [8000] }, // très lent, n=1 (peu fiable)
+      { a: 6, b: 6, recentMs: Array(20).fill(2000) }, // rapide, n=20 (très fiable)
+    ];
+    const ranked = analyzeFacts(stats);
+    // Le temps (8000 > 2000) l'emporte sur la confiance : 5×5 devant.
+    expect(factKey(ranked[0].a, ranked[0].b)).toBe(factKey(5, 5));
   });
 
   it("renvoie une liste vide sans données", () => {
