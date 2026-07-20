@@ -13,6 +13,7 @@ import {
 } from "@/lib/game/engine";
 import { generateQuestion, type Question } from "@/lib/game/generator";
 import {
+  ADAPTIVE_PARAMS,
   buildFactPool,
   factKey,
   factToQuestion,
@@ -87,7 +88,9 @@ export function Game({
   // Source de vérité SYNCHRONE de la saisie : évite qu'un 2e appui rapide,
   // survenu avant le re-rendu, reparte de l'ancienne valeur et perde un chiffre.
   const inputRef = useRef("");
-  // Mode adaptatif : pool pondéré + faits récemment posés (anti-répétition).
+  // Mode adaptatif : stats par fait (mises à jour EN COURS de partie), pool
+  // pondéré recalculé après chaque réponse, et faits récemment posés.
+  const statsRef = useRef<Map<string, FactStat>>(new Map());
   const poolRef = useRef<WeightedFact[] | null>(null);
   const recentlyAskedRef = useRef<string[]>([]);
   // Verrou SYNCHRONE : empêche une 2e validation avant que le feedback (état
@@ -102,14 +105,16 @@ export function Game({
     sessionRef.current = session;
   }, [session]);
 
-  // Charge l'historique et construit le pool pondéré (mode adaptatif).
+  // Charge l'historique, initialise les stats par fait et le pool (adaptatif).
   useEffect(() => {
     if (!adaptive || !ready || !profile) return;
     let cancelled = false;
     fetch(`/api/fact-stats?profileId=${profile.id}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((stats: FactStat[]) => {
-        if (!cancelled) poolRef.current = buildFactPool(stats);
+        if (cancelled) return;
+        statsRef.current = new Map(stats.map((s) => [factKey(s.a, s.b), s]));
+        poolRef.current = buildFactPool(stats);
       })
       .catch(() => {
         /* repli : tirage uniforme */
@@ -118,6 +123,24 @@ export function Game({
       cancelled = true;
     };
   }, [adaptive, ready, profile]);
+
+  // Intègre une réponse À CHAUD : le calcul raté peut revenir dans la même
+  // partie (le pool ne dépend plus seulement de l'historique figé au départ).
+  const applyAdaptiveAttempt = useCallback(
+    (a: number, b: number, responseMs: number) => {
+      if (!adaptive || responseMs > ADAPTIVE_PARAMS.capMs) return;
+      const key = factKey(a, b);
+      const [lo, hi] = a <= b ? [a, b] : [b, a];
+      const prev = statsRef.current.get(key);
+      const recentMs = [responseMs, ...(prev?.recentMs ?? [])].slice(
+        0,
+        ADAPTIVE_PARAMS.window,
+      );
+      statsRef.current.set(key, { a: lo, b: hi, recentMs, lastSeenDays: 0 });
+      poolRef.current = buildFactPool([...statsRef.current.values()]);
+    },
+    [adaptive],
+  );
 
   const nextQuestion = useCallback(() => {
     const pool = poolRef.current;
@@ -176,6 +199,8 @@ export function Game({
       });
       sessionRef.current = nextSession;
       setSession(nextSession);
+      // Réactivité intra-partie : nourrit le pool avec ce temps de réponse.
+      applyAdaptiveAttempt(q.a, q.b, responseMs);
       inputRef.current = value;
       setInput(value);
       haptic(); // vibration à chaque bonne réponse
@@ -188,7 +213,7 @@ export function Game({
         }
       }, FEEDBACK_MS);
     },
-    [nextQuestion],
+    [nextQuestion, applyAdaptiveAttempt],
   );
 
   const handleDigit = useCallback(
