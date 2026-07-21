@@ -315,7 +315,9 @@ export function Game({
       <div className="flex flex-1 flex-col items-center justify-center gap-10">
         <p data-testid="question" className="text-5xl font-extrabold tracking-tight">
           <span data-testid="operand-a">{question?.a}</span>
-          <span className="mx-3 text-accent">{config.symbol}</span>
+          <span className="mx-3 text-accent">
+            {question ? OPERATION_CONFIG[question.operation].symbol : config.symbol}
+          </span>
           <span data-testid="operand-b">{question?.b}</span>
         </p>
 

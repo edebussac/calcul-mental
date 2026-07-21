@@ -1,7 +1,4 @@
-/**
- * Catalogue des opérations. Conçu pour l'extension : au MVP seule la
- * multiplication est active, les autres sont déclarées mais désactivées.
- */
+/** Catalogue des opérations disponibles dans le menu d'entraînement. */
 
 export const OPERATIONS = [
   "multiplication",
@@ -29,13 +26,13 @@ export interface OperationConfig {
   label: string;
   /** Symbole mathématique affiché entre les opérandes. */
   symbol: string;
-  /** Activée dans l'UI au MVP ? */
+  /** Activée dans l'UI ? */
   enabled: boolean;
 }
 
 export const OPERATION_CONFIG: Record<Operation, OperationConfig> = {
-  all: { id: "all", label: "Aléatoire", symbol: "?", enabled: false },
-  division: { id: "division", label: "Division", symbol: "÷", enabled: false },
+  all: { id: "all", label: "Aléatoire", symbol: "?", enabled: true },
+  division: { id: "division", label: "Division", symbol: "÷", enabled: true },
   multiplication: {
     id: "multiplication",
     label: "Multiplication",
@@ -46,9 +43,9 @@ export const OPERATION_CONFIG: Record<Operation, OperationConfig> = {
     id: "subtraction",
     label: "Soustraction",
     symbol: "−",
-    enabled: false,
+    enabled: true,
   },
-  addition: { id: "addition", label: "Addition", symbol: "+", enabled: false },
+  addition: { id: "addition", label: "Addition", symbol: "+", enabled: true },
 };
 
 /** Ordre d'affichage dans le menu (identique aux captures). */
