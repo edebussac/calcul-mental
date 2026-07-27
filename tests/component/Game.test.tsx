@@ -34,6 +34,15 @@ function advance(ms: number): void {
 }
 
 /**
+ * Un appui au doigt. `pointerdown` et non `click` : c'est le chemin réel du
+ * pavé depuis le passage au multi-touch — `fireEvent.click` emprunterait la
+ * porte clavier (`detail === 0`) et ne prouverait rien du tactile.
+ */
+function press(label: string): void {
+  fireEvent.pointerDown(screen.getByLabelText(label));
+}
+
+/**
  * Tape le produit affiché ; le dernier chiffre valide la question ET fait
  * apparaître la suivante dans le même tick — aucun délai à laisser passer.
  */
@@ -41,13 +50,13 @@ function answerCurrent(): void {
   const a = Number(screen.getByTestId("operand-a").textContent);
   const b = Number(screen.getByTestId("operand-b").textContent);
   for (const digit of String(a * b)) {
-    fireEvent.click(screen.getByLabelText(`Chiffre ${digit}`));
+    press(`Chiffre ${digit}`);
   }
 }
 
 /** Un appui neutre : prouve la présence sans jamais valider quoi que ce soit. */
 function poke(): void {
-  fireEvent.click(screen.getByLabelText("Tout effacer"));
+  press("Tout effacer");
 }
 
 beforeEach(() => {

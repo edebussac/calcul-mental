@@ -172,18 +172,31 @@ L'option 2 a l'avantage de **supprimer** la constante au lieu de la déplacer :
 il ne reste aucun paramètre de gameplay caché dans `components/`, ce que
 redoutait le §4.3.
 
-### 6.2 Impossible de taper deux chiffres à la fois — UI, mais exigence durable
+### 6.2 Impossible de taper deux chiffres à la fois — ✅ corrigé
 
-`components/Keypad.tsx` utilise `onClick`, qui ne se déclenche qu'au
-**relâchement**, sur le même élément que l'appui. D'où :
+> **Corrigé.** `components/Keypad.tsx` déclenche sur `onPointerDown`. Le clic
+> reste branché pour le clavier (Entrée / Espace), reconnaissable à son
+> `detail === 0` — au doigt ou à la souris il vaut au moins 1, ce qui évite de
+> compter l'appui deux fois. Couvert par 4 tests dans
+> `tests/component/Keypad.test.tsx` : contact, chevauchement ordonné, clavier,
+> et non-doublon.
 
-- **Latence** : le chiffre s'enregistre au relever du doigt, jamais au contact.
-- **Multi-touch cassé** : poser le 6 avant d'avoir relâché le 5 ne produit
+**Le problème, avant correctif.** `components/Keypad.tsx` utilisait `onClick`,
+qui ne se déclenche qu'au **relâchement**, sur le même élément que l'appui.
+D'où :
+
+- **Latence** : le chiffre s'enregistrait au relever du doigt, jamais au contact.
+- **Multi-touch cassé** : poser le 6 avant d'avoir relâché le 5 ne produisait
   souvent aucun `click` pour le second.
 
 **Correctif web :** `onClick` → `onPointerDown`. Les pointer events sont émis par
 pointeur : deux doigts = deux événements indépendants, et le chiffre part au
-contact. `touch-action: manipulation` est déjà en place dans `app/globals.css`.
+contact. `touch-action: manipulation` était déjà en place dans `app/globals.css`.
+
+⚠️ **Ce que les tests ne prouvent pas.** `fireEvent.pointerDown` sous jsdom est
+une simulation. Le chevauchement réel de deux doigts sur une dalle tactile n'est
+pas vérifié, et ne peut pas l'être en e2e : Playwright ne pilote qu'un seul point
+de contact. Cf. §9 — ça se valide avec un téléphone en main.
 
 ## 7. Exigences durables pour l'app native
 
@@ -264,7 +277,8 @@ avec un vrai appareil.
 - [ ] Historique : repartir de zéro, ou ajouter une colonne `platform`
       maintenant ? *(irrattrapable après coup)*
 - [x] Corriger `FEEDBACK_MS` sur la version actuelle — **fait**, voir §6.1.
-- [ ] Passer le pavé à `onPointerDown` sur la version actuelle ?
+- [x] Passer le pavé à `onPointerDown` sur la version actuelle — **fait**,
+      voir §6.2. Reste à confirmer sur un vrai téléphone.
 
 ## Sources
 

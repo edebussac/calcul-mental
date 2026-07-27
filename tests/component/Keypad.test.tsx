@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Keypad } from "@/components/Keypad";
 
@@ -36,10 +36,56 @@ describe("Keypad", () => {
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 
+  it("enregistre le chiffre au contact, sans attendre le relâchement", () => {
+    const onDigit = vi.fn();
+    render(<Keypad onDigit={onDigit} onDelete={noop} onReset={noop} />);
+    // Doigt posé, jamais relevé : le chiffre doit déjà être parti.
+    fireEvent.pointerDown(screen.getByLabelText("Chiffre 4"));
+    expect(onDigit).toHaveBeenCalledWith(4);
+  });
+
+  it("accepte deux touches qui se chevauchent, dans l'ordre des contacts", () => {
+    const onDigit = vi.fn();
+    render(<Keypad onDigit={onDigit} onDelete={noop} onReset={noop} />);
+    // Le 6 est pressé alors que le 5 est ENCORE enfoncé : avec `click`, le
+    // second appui serait perdu faute de relâchement sur le même élément.
+    fireEvent.pointerDown(screen.getByLabelText("Chiffre 5"));
+    fireEvent.pointerDown(screen.getByLabelText("Chiffre 6"));
+    expect(onDigit.mock.calls.map(([d]) => d)).toEqual([5, 6]);
+  });
+
+  it("reste utilisable au clavier (aucun pointerdown émis)", () => {
+    const onDigit = vi.fn();
+    render(<Keypad onDigit={onDigit} onDelete={noop} onReset={noop} />);
+    // Entrée / Espace sur un bouton focalisé produit un click de `detail` 0.
+    fireEvent.click(screen.getByLabelText("Chiffre 3"), { detail: 0 });
+    expect(onDigit).toHaveBeenCalledExactlyOnceWith(3);
+  });
+
+  it("ne compte pas deux fois un appui suivi de son clic", () => {
+    const onDigit = vi.fn();
+    render(<Keypad onDigit={onDigit} onDelete={noop} onReset={noop} />);
+    const key = screen.getByLabelText("Chiffre 8");
+    // Séquence réelle d'un tap : le navigateur émet le click APRÈS le
+    // pointerdown. C'est `detail` (≥ 1 ici) qui doit le faire ignorer — sans
+    // quoi chaque chiffre partirait en double.
+    fireEvent.pointerDown(key);
+    fireEvent.pointerUp(key);
+    fireEvent.click(key, { detail: 1 });
+    expect(onDigit).toHaveBeenCalledExactlyOnceWith(8);
+  });
+
   it("désactive les touches quand disabled", () => {
-    render(<Keypad onDigit={noop} onDelete={noop} onReset={noop} disabled />);
+    const onDigit = vi.fn();
+    render(
+      <Keypad onDigit={onDigit} onDelete={noop} onReset={noop} disabled />,
+    );
     expect(screen.getByLabelText("Chiffre 5")).toBeDisabled();
     expect(screen.getByLabelText("Effacer")).toBeDisabled();
     expect(screen.getByLabelText("Tout effacer")).toBeDisabled();
+    // L'attribut ne suffit pas : un élément désactivé peut malgré tout recevoir
+    // un pointerdown, d'où le garde-fou explicite dans `pressProps`.
+    fireEvent.pointerDown(screen.getByLabelText("Chiffre 5"));
+    expect(onDigit).not.toHaveBeenCalled();
   });
 });
