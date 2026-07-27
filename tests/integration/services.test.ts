@@ -32,6 +32,7 @@ const answer = (
   given,
   isCorrect: given === a * b,
   responseMs: 1200,
+  maxIdleMs: 0,
 });
 
 describe("profiles service", () => {

@@ -15,6 +15,13 @@
       "when": 1784444535758,
       "tag": "0001_hot_corsair",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785183624616,
+      "tag": "0002_ambitious_sir_ram",
+      "breakpoints": true
     }
   ]
 }

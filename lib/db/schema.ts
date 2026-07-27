@@ -52,6 +52,12 @@ export const answers = pgTable("answers", {
   given: integer("given").notNull(),
   isCorrect: boolean("is_correct").notNull(),
   responseMs: integer("response_ms").notNull(),
+  /**
+   * Plus longue plage sans appui pendant la question. Sépare le calcul
+   * difficile (long, mais frappes régulières) de l'absence (long et écran
+   * figé) : seule la seconde est écartée du modèle adaptatif.
+   */
+  maxIdleMs: integer("max_idle_ms").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

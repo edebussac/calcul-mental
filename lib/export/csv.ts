@@ -13,6 +13,8 @@ export interface AnswerExportRow {
   given: number;
   isCorrect: boolean;
   responseMs: number;
+  /** Plus longue plage sans appui pendant la question (ms). */
+  maxIdleMs: number;
   sessionId: number;
 }
 
@@ -27,6 +29,7 @@ export const CSV_HEADERS = [
   "given",
   "is_correct",
   "response_ms",
+  "max_idle_ms",
   "session_id",
 ] as const;
 
@@ -54,6 +57,7 @@ export function toAnswersCsv(rows: AnswerExportRow[]): string {
         String(r.given),
         r.isCorrect ? "true" : "false",
         String(r.responseMs),
+        String(r.maxIdleMs),
         String(r.sessionId),
       ].join(","),
     );

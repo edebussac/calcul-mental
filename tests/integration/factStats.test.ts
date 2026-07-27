@@ -3,7 +3,7 @@ import { createTestDb } from "./helpers/testDb";
 import type { Database } from "@/lib/db/client";
 import { answers, profiles, sessions } from "@/lib/db/schema";
 import { multiplicationFactStats } from "@/lib/services/factStats";
-import { factKey } from "@/lib/game/adaptive";
+import { ADAPTIVE_PARAMS, factKey } from "@/lib/game/adaptive";
 
 const DAY = 86_400_000;
 const BASE = new Date("2026-01-15T12:00:00Z");
@@ -40,6 +40,8 @@ async function addAnswer(
   b: number,
   responseMs: number,
   ageDays: number,
+  /** Silence max pendant la question ; 0 = l'enfant a tapé sans arrêt. */
+  maxIdleMs = 0,
 ) {
   await db.insert(answers).values({
     sessionId,
@@ -50,17 +52,18 @@ async function addAnswer(
     given: a * b,
     isCorrect: true,
     responseMs,
+    maxIdleMs,
     createdAt: new Date(BASE.getTime() - ageDays * DAY),
   });
 }
 
 describe("multiplicationFactStats", () => {
-  it("mutualise 3×4 / 4×3 et exclut les temps > 10 s", async () => {
+  it("mutualise 3×4 / 4×3 et exclut les absences (> 10 s sans appui)", async () => {
     const pid = await makeProfile();
     const sid = await makeSession(pid);
     await addAnswer(sid, 3, 4, 2000, 1);
     await addAnswer(sid, 4, 3, 3000, 0.5); // même fait, plus récent
-    await addAnswer(sid, 4, 3, 99999, 0.1); // > 10 s → ignoré
+    await addAnswer(sid, 4, 3, 99999, 0.1, 99999); // écran figé → ignoré
 
     const stats = await multiplicationFactStats(db, pid, BASE);
     expect(stats).toHaveLength(1);
@@ -68,9 +71,31 @@ describe("multiplicationFactStats", () => {
     expect(factKey(f.a, f.b)).toBe(factKey(3, 4));
     expect(f.a).toBe(3);
     expect(f.b).toBe(4);
-    // Plus récent en tête ; l'aberrant est absent.
+    // Plus récent en tête ; l'absence est absente.
     expect(f.recentMs).toEqual([3000, 2000]);
     expect(f.lastSeenDays).toBeCloseTo(0.5, 5);
+  });
+
+  it("GARDE un temps long si l'enfant a tapé régulièrement", async () => {
+    const pid = await makeProfile();
+    const sid = await makeSession(pid);
+    // 24 s sur 7×8, mais jamais plus de 4 s sans appui : il cherchait.
+    await addAnswer(sid, 7, 8, 24_000, 1, 4000);
+
+    const stats = await multiplicationFactStats(db, pid, BASE);
+    expect(stats).toHaveLength(1);
+    // Conservé — c'est exactement le fait à faire remonter — mais écrêté à
+    // slowCapMs pour ne pas écraser l'échelle des autres.
+    expect(stats[0].recentMs).toEqual([ADAPTIVE_PARAMS.slowCapMs]);
+  });
+
+  it("écarte un temps long resté sans le moindre appui", async () => {
+    const pid = await makeProfile();
+    const sid = await makeSession(pid);
+    // Même durée, mais 20 s d'un bloc sans rien toucher : il était ailleurs.
+    await addAnswer(sid, 7, 8, 24_000, 1, 20_000);
+
+    expect(await multiplicationFactStats(db, pid, BASE)).toHaveLength(0);
   });
 
   it("ne garde que les K dernières tentatives (les plus récentes)", async () => {

@@ -12,6 +12,7 @@ const row: AnswerExportRow = {
   given: 12,
   isCorrect: true,
   responseMs: 900,
+  maxIdleMs: 400,
   sessionId: 7,
 };
 
@@ -21,7 +22,7 @@ describe("toAnswersCsv", () => {
     const lines = csv.split("\n");
     expect(lines[0]).toBe(CSV_HEADERS.join(","));
     expect(lines[1]).toBe(
-      "2026-01-15T12:00:00.000Z,Emma,multiplication,adaptive,4,3,12,12,true,900,7",
+      "2026-01-15T12:00:00.000Z,Emma,multiplication,adaptive,4,3,12,12,true,900,400,7",
     );
   });
 

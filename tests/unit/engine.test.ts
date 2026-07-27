@@ -18,7 +18,12 @@ const q = (a: number, b: number): Question => ({
 function play(steps: Array<{ q: Question; given: number }>): SessionState {
   return steps.reduce(
     (state, step) =>
-      recordAnswer(state, { question: step.q, given: step.given, responseMs: 1000 }),
+      recordAnswer(state, {
+        question: step.q,
+        given: step.given,
+        responseMs: 1000,
+        maxIdleMs: 0,
+      }),
     initialSession,
   );
 }
@@ -26,7 +31,12 @@ function play(steps: Array<{ q: Question; given: number }>): SessionState {
 describe("recordAnswer", () => {
   it("est immuable (ne mute pas l'état d'entrée)", () => {
     const before = initialSession;
-    recordAnswer(before, { question: q(4, 3), given: 12, responseMs: 500 });
+    recordAnswer(before, {
+      question: q(4, 3),
+      given: 12,
+      responseMs: 500,
+      maxIdleMs: 0,
+    });
     expect(before).toEqual(initialSession);
     expect(before.answers).toHaveLength(0);
   });

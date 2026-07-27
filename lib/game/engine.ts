@@ -20,6 +20,12 @@ export interface AnswerRecord {
   isCorrect: boolean;
   /** Temps de réponse en millisecondes. */
   responseMs: number;
+  /**
+   * Plus longue plage sans aucun appui pendant la question (ms). Distingue un
+   * calcul difficile (long, mais frappes régulières) d'une absence (long et
+   * écran figé) — voir `lib/game/activity.ts`.
+   */
+  maxIdleMs: number;
 }
 
 export interface SessionState {
@@ -45,6 +51,7 @@ export interface SubmitInput {
   question: Question;
   given: number;
   responseMs: number;
+  maxIdleMs: number;
 }
 
 /**
@@ -53,7 +60,7 @@ export interface SubmitInput {
  */
 export function recordAnswer(
   state: SessionState,
-  { question, given, responseMs }: SubmitInput,
+  { question, given, responseMs, maxIdleMs }: SubmitInput,
 ): SessionState {
   const isCorrect = given === question.answer;
   const streak = isCorrect ? state.streak + 1 : 0;
@@ -66,6 +73,7 @@ export function recordAnswer(
     given,
     isCorrect,
     responseMs,
+    maxIdleMs,
   };
 
   return {

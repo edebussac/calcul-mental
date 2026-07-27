@@ -15,12 +15,20 @@ import { generateQuestion, type Question } from "@/lib/game/generator";
 import {
   ADAPTIVE_PARAMS,
   buildFactPool,
+  clampResponseMs,
   factKey,
   factToQuestion,
+  isEngagedAttempt,
   pickFact,
   type FactStat,
   type WeightedFact,
 } from "@/lib/game/adaptive";
+import {
+  maxIdle,
+  registerActivity,
+  startActivity,
+  type Activity,
+} from "@/lib/game/activity";
 import { OPERATION_CONFIG, type Operation } from "@/lib/game/operations";
 
 // Durée d'un round (s). Abaissée en e2e via NEXT_PUBLIC_ROUND_SECONDS.
@@ -96,6 +104,9 @@ export function Game({
   // Verrou SYNCHRONE : empêche une 2e validation avant que le feedback (état
   // async) ne désactive le pavé — sinon un tap rapide compte une réponse en trop.
   const lockRef = useRef(false);
+  // Inactivité pendant la question courante : tout appui la remet à zéro, ce
+  // qui permet de distinguer « bloqué mais il cherche » de « parti jouer ».
+  const activityRef = useRef<Activity>(startActivity(0));
 
   // Miroirs pour les closures (timer, setTimeout) sans lire de ref au rendu.
   useEffect(() => {
@@ -127,12 +138,12 @@ export function Game({
   // Intègre une réponse À CHAUD : le calcul raté peut revenir dans la même
   // partie (le pool ne dépend plus seulement de l'historique figé au départ).
   const applyAdaptiveAttempt = useCallback(
-    (a: number, b: number, responseMs: number) => {
-      if (!adaptive || responseMs > ADAPTIVE_PARAMS.capMs) return;
+    (a: number, b: number, responseMs: number, maxIdleMs: number) => {
+      if (!adaptive || !isEngagedAttempt(maxIdleMs)) return;
       const key = factKey(a, b);
       const [lo, hi] = a <= b ? [a, b] : [b, a];
       const prev = statsRef.current.get(key);
-      const recentMs = [responseMs, ...(prev?.recentMs ?? [])].slice(
+      const recentMs = [clampResponseMs(responseMs), ...(prev?.recentMs ?? [])].slice(
         0,
         ADAPTIVE_PARAMS.window,
       );
@@ -157,7 +168,9 @@ export function Game({
     setQuestion(q);
     inputRef.current = "";
     setInput("");
-    questionStart.current = Date.now();
+    const now = Date.now();
+    questionStart.current = now;
+    activityRef.current = startActivity(now);
   }, [operation, adaptive]);
 
   // Redirige vers l'accueil si aucun profil sélectionné.
@@ -191,16 +204,21 @@ export function Game({
   const markCorrect = useCallback(
     (q: Question, value: string) => {
       lockRef.current = true;
-      const responseMs = Date.now() - questionStart.current;
+      const now = Date.now();
+      const responseMs = now - questionStart.current;
+      // L'appui qui vient de donner la bonne réponse a déjà été enregistré
+      // comme activité : la plage en cours est nulle, la valeur est finale.
+      const idleMs = maxIdle(activityRef.current, now);
       const nextSession = recordAnswer(sessionRef.current, {
         question: q,
         given: q.answer,
         responseMs,
+        maxIdleMs: idleMs,
       });
       sessionRef.current = nextSession;
       setSession(nextSession);
       // Réactivité intra-partie : nourrit le pool avec ce temps de réponse.
-      applyAdaptiveAttempt(q.a, q.b, responseMs);
+      applyAdaptiveAttempt(q.a, q.b, responseMs, idleMs);
       inputRef.current = value;
       setInput(value);
       haptic(); // vibration à chaque bonne réponse
@@ -219,6 +237,9 @@ export function Game({
   const handleDigit = useCallback(
     (digit: number) => {
       if (lockRef.current || phaseRef.current !== "playing" || !question) return;
+      // Signe de vie, AVANT toute autre condition : même un appui refusé parce
+      // que la saisie est pleine prouve que l'enfant est devant l'écran.
+      activityRef.current = registerActivity(activityRef.current, Date.now());
       // Lecture/écriture SYNCHRONE via la ref : deux appuis rapprochés ne se
       // marchent plus dessus (plus de chiffre perdu).
       const next = inputRef.current + String(digit);
@@ -233,6 +254,7 @@ export function Game({
 
   const handleDelete = useCallback(() => {
     if (lockRef.current || phaseRef.current !== "playing") return;
+    activityRef.current = registerActivity(activityRef.current, Date.now());
     const next = inputRef.current.slice(0, -1);
     inputRef.current = next;
     setInput(next);
@@ -240,6 +262,7 @@ export function Game({
 
   const handleReset = useCallback(() => {
     if (lockRef.current || phaseRef.current !== "playing") return;
+    activityRef.current = registerActivity(activityRef.current, Date.now());
     inputRef.current = "";
     setInput("");
   }, []);

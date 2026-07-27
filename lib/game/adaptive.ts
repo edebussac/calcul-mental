@@ -14,7 +14,11 @@ import { computeAnswer, type Question } from "./generator";
 export interface FactStat {
   a: number;
   b: number;
-  /** Temps récents (ms), du PLUS RÉCENT au plus ancien, déjà cappés (≤ CAP). */
+  /**
+   * Temps récents (ms), du PLUS RÉCENT au plus ancien. Les tentatives jugées
+   * « absence » (voir `idleCapMs`) en ont déjà été retirées, et les temps
+   * restants sont écrêtés à `slowCapMs`.
+   */
   recentMs: number[];
   /** Jours depuis la dernière tentative ; `undefined` si jamais vu. */
   lastSeenDays?: number;
@@ -27,8 +31,19 @@ export interface WeightedFact {
 }
 
 export interface AdaptiveParams {
-  /** Cap au-delà duquel un temps est ignoré (absence). */
-  capMs: number;
+  /**
+   * Inactivité continue (ms) au-delà de laquelle la tentative est jugée
+   * « absence » et écartée. Ce seuil porte sur le SILENCE, pas sur la durée
+   * totale : une question de 30 s ponctuée d'appuis reste un signal valide de
+   * difficulté, une question de 30 s sans le moindre appui est du bruit.
+   */
+  idleCapMs: number;
+  /**
+   * Écrêtage (ms) du temps de réponse retenu. Une tentative de 40 s compte
+   * comme `slowCapMs` : elle reste « très difficile » sans tirer vers le haut
+   * les percentiles de `playerRefs` et aplatir l'échelle des autres faits.
+   */
+  slowCapMs: number;
   /** Nb max de tentatives conservées par fait. */
   window: number;
   /** Décroissance EMA par tentative (0<β<1). */
@@ -55,7 +70,8 @@ export interface AdaptiveParams {
 }
 
 export const ADAPTIVE_PARAMS: AdaptiveParams = {
-  capMs: 10_000,
+  idleCapMs: 10_000,
+  slowCapMs: 15_000,
   window: 10,
   beta: 0.6,
   fastRefMs: 1500,
@@ -72,6 +88,22 @@ export const ADAPTIVE_PARAMS: AdaptiveParams = {
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
+}
+
+/** Une tentative est-elle exploitable, ou l'enfant était-il absent ? */
+export function isEngagedAttempt(
+  maxIdleMs: number,
+  params: AdaptiveParams = ADAPTIVE_PARAMS,
+): boolean {
+  return maxIdleMs <= params.idleCapMs;
+}
+
+/** Écrête un temps de réponse avant de l'injecter dans le modèle. */
+export function clampResponseMs(
+  responseMs: number,
+  params: AdaptiveParams = ADAPTIVE_PARAMS,
+): number {
+  return Math.min(responseMs, params.slowCapMs);
 }
 
 /** Clé canonique d'un fait (paire triée). */

@@ -9,6 +9,7 @@ const validAnswer = {
   given: 12,
   isCorrect: true,
   responseMs: 900,
+  maxIdleMs: 400,
 };
 
 const validBody = {
@@ -25,6 +26,23 @@ describe("parseSaveSessionInput", () => {
     expect(parsed).not.toBeNull();
     expect(parsed?.answers).toHaveLength(1);
     expect(parsed?.level).toBe(1);
+  });
+
+  it("conserve maxIdleMs", () => {
+    const parsed = parseSaveSessionInput(validBody);
+    expect(parsed?.answers[0].maxIdleMs).toBe(400);
+  });
+
+  it("replie maxIdleMs sur responseMs si le client ne l'envoie pas", () => {
+    // Un client en cache (PWA) poste l'ancien format : on suppose le pire cas
+    // (tout le temps était du silence) plutôt que de le créditer d'activité.
+    const { maxIdleMs: _idle, ...legacyAnswer } = validAnswer;
+    void _idle;
+    const parsed = parseSaveSessionInput({
+      ...validBody,
+      answers: [legacyAnswer],
+    });
+    expect(parsed?.answers[0].maxIdleMs).toBe(900);
   });
 
   it("applique level = 1 par défaut", () => {

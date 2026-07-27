@@ -58,6 +58,7 @@ export async function saveSession(
           given: a.given,
           isCorrect: a.isCorrect,
           responseMs: a.responseMs,
+          maxIdleMs: a.maxIdleMs,
         })),
       );
     }

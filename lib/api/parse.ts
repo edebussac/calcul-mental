@@ -34,6 +34,10 @@ function parseAnswer(raw: unknown): AnswerRecord | null {
     given: a.given,
     isCorrect: a.isCorrect,
     responseMs: a.responseMs,
+    // Compat : un client encore en cache (PWA) n'envoie pas `maxIdleMs`. On
+    // suppose alors le pire — tout le temps de réponse était du silence — ce
+    // qui reproduit exactement l'ancien filtre (> 10 s → écarté du modèle).
+    maxIdleMs: isFiniteNumber(a.maxIdleMs) ? a.maxIdleMs : a.responseMs,
   };
 }
 

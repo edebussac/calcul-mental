@@ -21,6 +21,7 @@ export async function exportAnswerRows(
       given: answers.given,
       isCorrect: answers.isCorrect,
       responseMs: answers.responseMs,
+      maxIdleMs: answers.maxIdleMs,
       sessionId: answers.sessionId,
     })
     .from(answers)
