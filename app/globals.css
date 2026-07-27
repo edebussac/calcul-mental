@@ -77,6 +77,26 @@ button {
     }
   }
 
+  /* Écho du résultat trouvé : bien lisible d'abord, puis s'efface. La durée
+     suit `ANSWER_ECHO_MS` (Game.tsx), qui retire la valeur au même moment. */
+  .answer-echo {
+    animation: answer-echo 800ms ease-in forwards;
+  }
+  @keyframes answer-echo {
+    0%,
+    55% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .answer-echo {
+      animation: none;
+    }
+  }
+
   /* État pressé d'un bouton (retour tactile) */
   .neu-pressable {
     background: var(--surface);
@@ -84,7 +104,11 @@ button {
       -5px -5px 12px var(--shadow-light);
     transition: box-shadow 0.08s ease, transform 0.08s ease;
   }
-  .neu-pressable:active {
+  /* `:active` ne vise qu'un seul élément à la fois : en multi-touch la seconde
+     touche resterait au repos. `data-pressed` est posé par doigt (Keypad.tsx)
+     et prend le relais ; `:active` reste pour le clavier et la souris. */
+  .neu-pressable:active,
+  .neu-pressable[data-pressed] {
     box-shadow: inset 4px 4px 9px var(--shadow-dark),
       inset -4px -4px 9px var(--shadow-light);
     transform: translateY(1px);

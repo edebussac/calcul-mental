@@ -38,6 +38,11 @@ const DURATION_SECONDS = Number(process.env.NEXT_PUBLIC_ROUND_SECONDS) || 60;
 const RESULT_LOCK_MS = 500;
 // Réponses ≤ 100 (10×10) → 3 chiffres max.
 const MAX_ANSWER_DIGITS = 3;
+// Durée d'affichage du résultat qu'on vient de trouver, en écho dans la case de
+// saisie. PUREMENT décoratif : l'écho s'efface dès la première frappe et ne
+// retient jamais le jeu — la question suivante est déjà active en dessous. Ce
+// n'est donc pas un paramètre de score (cf. MIGRATION-MOBILE.md §4.3).
+const ANSWER_ECHO_MS = 800;
 
 type Phase = "playing" | "finished";
 
@@ -86,6 +91,10 @@ export function Game({
   // validation : il change de clé, donc React remonte la case et l'animation
   // repart. Purement décoratif — il ne conditionne jamais la saisie.
   const [flash, setFlash] = useState(0);
+  // Résultat qu'on vient de valider, montré brièvement pendant que la question
+  // suivante est déjà jouable. `null` dès qu'il est périmé ou recouvert.
+  const [echo, setEcho] = useState<number | null>(null);
+  const echoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "done" | "error">(
     "idle",
   );
@@ -227,6 +236,11 @@ export function Game({
       applyAdaptiveAttempt(q.a, q.b, responseMs, idleMs);
       haptic(); // vibration à chaque bonne réponse
       setFlash((n) => n + 1);
+      // Écho du résultat trouvé : `nextQuestion` vide la saisie juste après,
+      // sinon il ne resterait que le contour vert sur une case vide.
+      setEcho(q.answer);
+      if (echoTimer.current) clearTimeout(echoTimer.current);
+      echoTimer.current = setTimeout(() => setEcho(null), ANSWER_ECHO_MS);
       nextQuestion();
     },
     [nextQuestion, applyAdaptiveAttempt],
@@ -260,6 +274,9 @@ export function Game({
     const next = inputRef.current.slice(0, -1);
     inputRef.current = next;
     setInput(next);
+    // Sinon l'écho du résultat précédent réapparaîtrait dans une case revenue
+    // vide, à côté d'une question qui n'est plus la sienne.
+    setEcho(null);
   }, []);
 
   const handleReset = useCallback(() => {
@@ -267,6 +284,14 @@ export function Game({
     activityRef.current = registerActivity(activityRef.current, Date.now());
     inputRef.current = "";
     setInput("");
+    setEcho(null);
+  }, []);
+
+  // Le timer d'écho ne doit pas survivre à l'écran de jeu.
+  useEffect(() => {
+    return () => {
+      if (echoTimer.current) clearTimeout(echoTimer.current);
+    };
   }, []);
 
   // Sauvegarde de la session terminée (une seule fois).
@@ -299,6 +324,7 @@ export function Game({
   const restart = () => {
     savedRef.current = false;
     inputRef.current = "";
+    setEcho(null);
     setSaveState("idle");
     setSession(initialSession);
     sessionRef.current = initialSession;
@@ -348,7 +374,17 @@ export function Game({
             flash > 0 ? "answer-flash" : ""
           }`}
         >
-          {input === "" ? <span className="text-muted">?</span> : input}
+          {input !== "" ? (
+            input
+          ) : echo !== null ? (
+            // Le résultat qu'on vient de trouver, le temps de le lire. La
+            // saisie le recouvre dès la première frappe : `input` passe avant.
+            <span data-testid="answer-echo" className="answer-echo text-accent-strong">
+              {echo}
+            </span>
+          ) : (
+            <span className="text-muted">?</span>
+          )}
         </div>
       </div>
 

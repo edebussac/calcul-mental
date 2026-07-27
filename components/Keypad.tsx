@@ -1,6 +1,6 @@
 "use client";
 
-import type { MouseEvent } from "react";
+import { useCallback, useState, type MouseEvent, type PointerEvent } from "react";
 
 type Key = number | "back" | "reset";
 
@@ -20,6 +20,26 @@ export interface KeypadProps {
 
 export function Keypad({ onDigit, onDelete, onReset, disabled }: KeypadProps) {
   /**
+   * Touches actuellement enfoncées, par pointeur.
+   *
+   * L'état pressé ne peut PAS venir de `:active` : le CSS ne considère qu'un
+   * seul élément actif à la fois, donc en multi-touch la seconde touche restait
+   * visuellement au repos alors qu'elle répondait. On suit donc un doigt par
+   * entrée, ce qui permet d'en afficher plusieurs enfoncées simultanément.
+   */
+  const [pressedBy, setPressedBy] = useState<ReadonlyMap<number, Key>>(new Map());
+  const pressedKeys = new Set(pressedBy.values());
+
+  const release = useCallback((pointerId: number) => {
+    setPressedBy((prev) => {
+      if (!prev.has(pointerId)) return prev;
+      const next = new Map(prev);
+      next.delete(pointerId);
+      return next;
+    });
+  }, []);
+
+  /**
    * Une touche part AU CONTACT (`pointerdown`), pas au relâchement.
    *
    * C'est ce qui permet d'enchaîner vite et de poser un doigt sur une touche
@@ -31,11 +51,25 @@ export function Keypad({ onDigit, onDelete, onReset, disabled }: KeypadProps) {
    * `pointerdown`. `detail === 0` identifie ces clics-là : au doigt ou à la
    * souris il vaut au moins 1, ce qui évite de compter l'appui deux fois.
    */
-  function pressProps(action: () => void) {
+  function pressProps(key: Key, action: () => void) {
     return {
-      onPointerDown: () => {
-        if (!disabled) action();
+      "data-pressed": pressedKeys.has(key) || undefined,
+      onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+        if (disabled) return;
+        // Capture le pointeur : sans ça, un doigt qui glisse hors de la touche
+        // avant de se lever émet son `pointerup` ailleurs, et la touche reste
+        // enfoncée à l'écran indéfiniment.
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          /* environnement sans capture de pointeur (jsdom) : sans conséquence */
+        }
+        setPressedBy((prev) => new Map(prev).set(event.pointerId, key));
+        action();
       },
+      onPointerUp: (event: PointerEvent<HTMLButtonElement>) => release(event.pointerId),
+      onPointerCancel: (event: PointerEvent<HTMLButtonElement>) =>
+        release(event.pointerId),
       onClick: (event: MouseEvent) => {
         if (!disabled && event.detail === 0) action();
       },
@@ -52,7 +86,7 @@ export function Keypad({ onDigit, onDelete, onReset, disabled }: KeypadProps) {
               type="button"
               aria-label="Tout effacer"
               disabled={disabled}
-              {...pressProps(onReset)}
+              {...pressProps("reset", onReset)}
               className="neu-pressable rounded-2xl py-5 text-xl font-semibold text-muted disabled:opacity-50"
             >
               C
@@ -66,7 +100,7 @@ export function Keypad({ onDigit, onDelete, onReset, disabled }: KeypadProps) {
               type="button"
               aria-label="Effacer"
               disabled={disabled}
-              {...pressProps(onDelete)}
+              {...pressProps("back", onDelete)}
               className="neu-pressable rounded-2xl py-5 text-2xl text-muted disabled:opacity-50"
             >
               ⌫
@@ -79,7 +113,7 @@ export function Keypad({ onDigit, onDelete, onReset, disabled }: KeypadProps) {
             type="button"
             aria-label={`Chiffre ${key}`}
             disabled={disabled}
-            {...pressProps(() => onDigit(key))}
+            {...pressProps(key, () => onDigit(key))}
             className="neu-pressable rounded-2xl py-5 text-3xl font-semibold text-text disabled:opacity-50"
           >
             {key}

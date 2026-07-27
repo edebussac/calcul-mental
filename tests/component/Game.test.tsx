@@ -96,6 +96,48 @@ describe("Game — enchaînement des questions", () => {
   });
 });
 
+describe("Game — écho du résultat trouvé", () => {
+  it("affiche brièvement la réponse validée, sans figer la suivante", () => {
+    render(<Game operation="multiplication" />);
+
+    const a = Number(screen.getByTestId("operand-a").textContent);
+    const b = Number(screen.getByTestId("operand-b").textContent);
+    answerCurrent();
+
+    // La question suivante est déjà posée, et le résultat trouvé reste lisible.
+    expect(screen.getByTestId("answer-echo")).toHaveTextContent(String(a * b));
+    expect(screen.getByLabelText("Chiffre 1")).not.toBeDisabled();
+
+    // Il s'efface tout seul.
+    advance(1000);
+    expect(screen.queryByTestId("answer-echo")).not.toBeInTheDocument();
+  });
+
+  // Le 0 est la seule frappe qui ne puisse JAMAIS valider (les réponses vont de
+  // 1 à 100) : taper « 1 » rendrait ces tests flaky une fois sur cent, quand la
+  // question tirée au hasard se trouve être 1×1.
+  const NEUTRE = "Chiffre 0";
+
+  it("est recouvert dès la première frappe", () => {
+    render(<Game operation="multiplication" />);
+    answerCurrent();
+    expect(screen.getByTestId("answer-echo")).toBeInTheDocument();
+
+    press(NEUTRE);
+    expect(screen.queryByTestId("answer-echo")).not.toBeInTheDocument();
+    expect(screen.getByTestId("answer")).toHaveTextContent("0");
+  });
+
+  it("ne réapparaît pas quand la saisie est effacée", () => {
+    render(<Game operation="multiplication" />);
+    answerCurrent();
+
+    press(NEUTRE);
+    press("Effacer"); // saisie de nouveau vide, mais la question a changé
+    expect(screen.queryByTestId("answer-echo")).not.toBeInTheDocument();
+  });
+});
+
 describe("Game — mesure de l'inactivité", () => {
   it("sépare le blocage actif de l'absence sur une même durée", () => {
     render(<Game operation="multiplication" />);

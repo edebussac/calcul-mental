@@ -62,6 +62,37 @@ describe("Keypad", () => {
     expect(onDigit).toHaveBeenCalledExactlyOnceWith(3);
   });
 
+  it("montre les DEUX touches enfoncées quand deux doigts se chevauchent", () => {
+    const onDigit = vi.fn();
+    render(<Keypad onDigit={onDigit} onDelete={noop} onReset={noop} />);
+    const cinq = screen.getByLabelText("Chiffre 5");
+    const six = screen.getByLabelText("Chiffre 6");
+
+    fireEvent.pointerDown(cinq, { pointerId: 1 });
+    fireEvent.pointerDown(six, { pointerId: 2 });
+    // `:active` n'en aurait marqué qu'une seule — d'où l'état piloté par doigt.
+    expect(cinq).toHaveAttribute("data-pressed");
+    expect(six).toHaveAttribute("data-pressed");
+
+    // Chaque doigt ne relâche que sa propre touche.
+    fireEvent.pointerUp(cinq, { pointerId: 1 });
+    expect(cinq).not.toHaveAttribute("data-pressed");
+    expect(six).toHaveAttribute("data-pressed");
+
+    fireEvent.pointerUp(six, { pointerId: 2 });
+    expect(six).not.toHaveAttribute("data-pressed");
+  });
+
+  it("relâche l'état pressé si le geste est annulé", () => {
+    render(<Keypad onDigit={noop} onDelete={noop} onReset={noop} />);
+    const touche = screen.getByLabelText("Chiffre 9");
+    fireEvent.pointerDown(touche, { pointerId: 1 });
+    expect(touche).toHaveAttribute("data-pressed");
+    // Ex. le navigateur reprend le geste (scroll, appel entrant).
+    fireEvent.pointerCancel(touche, { pointerId: 1 });
+    expect(touche).not.toHaveAttribute("data-pressed");
+  });
+
   it("ne compte pas deux fois un appui suivi de son clic", () => {
     const onDigit = vi.fn();
     render(<Keypad onDigit={onDigit} onDelete={noop} onReset={noop} />);
