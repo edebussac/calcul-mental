@@ -1,8 +1,10 @@
 # Migration vers une app mobile native
 
-> **Statut : analyse, aucune décision prise.** Ce document consigne l'état des
-> lieux et les recommandations issues de la réflexion du **27/07/2026**. Rien
-> n'est engagé : ni la techno, ni le modèle de données, ni le calendrier.
+> **Statut : analyse.** Ce document consigne l'état des lieux et les
+> recommandations issues de la réflexion du **27/07/2026**. Rien n'est engagé
+> sur la migration elle-même : ni la techno, ni le modèle de données, ni le
+> calendrier. En revanche les correctifs du §6, qui portent sur la version
+> actuelle, sont suivis case par case en §10.
 
 ## 1. L'objectif
 
@@ -128,12 +130,18 @@ Le schéma actuel (`profiles`, `sessions`, `answers`) migre **en forme** :
 
 ## 6. Problèmes ouverts sur la version actuelle
 
-### 6.1 Le gel de 350 ms après une bonne réponse — ⚠️ règle de jeu, pas de l'UI
+### 6.1 Le gel de 350 ms après une bonne réponse — ✅ corrigé
 
-`FEEDBACK_MS = 350` (`components/Game.tsx`). Dès la bonne réponse,
-`lockRef.current = true`, et la question suivante n'arrive que 350 ms plus tard.
-Pendant ce temps, les appuis ne sont **pas mis en file d'attente : ils sont
-jetés**.
+> **Corrigé** (option 2). `FEEDBACK_MS` et `lockRef` ont disparu de
+> `components/Game.tsx` : la question suivante est posée dans le même tick que
+> la validation, et le flash vert est une animation CSS qui ne bloque rien.
+> Couvert par « n'impose aucun temps mort entre deux questions »
+> (`tests/component/Game.test.tsx`).
+
+**Le problème, avant correctif.** `FEEDBACK_MS = 350` (`components/Game.tsx`).
+Dès la bonne réponse, `lockRef.current = true`, et la question suivante
+n'arrivait que 350 ms plus tard. Pendant ce temps, les appuis n'étaient **pas
+mis en file d'attente : ils étaient jetés**.
 
 > Ironie : le commit `b31a46f` (« chiffres perdus en tapant vite ») a corrigé ce
 > problème pour l'état React, mais le verrou continue d'en perdre.
@@ -151,17 +159,18 @@ score**. Elle plafonne mécaniquement le nombre de réponses par minute.
 ✅ Ce que ça ne casse **pas** : le modèle adaptatif. `responseMs` se mesure depuis
 `questionStart`, les temps par fait restent justes. Seul le score est faussé.
 
-**Options**, de la plus timide à la plus juste :
+**Options** envisagées, de la plus timide à la plus juste :
 
 1. Baisser à ~120 ms.
 2. **Ne plus bloquer du tout** : basculer la question immédiatement, le flash
    vert devient une animation non bloquante sur la réponse précédente.
-   *(recommandé)*
+   *(retenue)*
 3. Compromis : verrou très court (~80 ms) mais **bufferiser** les appuis au lieu
    de les jeter.
 
-Dans tous les cas, `FEEDBACK_MS` doit sortir de `components/` pour rejoindre les
-paramètres de jeu testés.
+L'option 2 a l'avantage de **supprimer** la constante au lieu de la déplacer :
+il ne reste aucun paramètre de gameplay caché dans `components/`, ce que
+redoutait le §4.3.
 
 ### 6.2 Impossible de taper deux chiffres à la fois — UI, mais exigence durable
 
@@ -254,8 +263,8 @@ avec un vrai appareil.
 - [ ] Données : 100 % local / local + sync plus tard / garder le backend ?
 - [ ] Historique : repartir de zéro, ou ajouter une colonne `platform`
       maintenant ? *(irrattrapable après coup)*
-- [ ] Corriger `FEEDBACK_MS` et le passage à `onPointerDown` sur la version
-      actuelle ?
+- [x] Corriger `FEEDBACK_MS` sur la version actuelle — **fait**, voir §6.1.
+- [ ] Passer le pavé à `onPointerDown` sur la version actuelle ?
 
 ## Sources
 

@@ -18,9 +18,6 @@ vi.mock("@/lib/profile", () => ({
 }));
 
 const ROUND_MS = 60_000;
-// Doit coller EXACTEMENT au feedback de Game : 1 ms de plus et l'attente
-// compterait comme du silence sur la question suivante (ce qu'elle est).
-const FEEDBACK_MS = 350;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 /** Réponses effectivement postées à la fin du round. */
@@ -36,14 +33,16 @@ function advance(ms: number): void {
   });
 }
 
-/** Tape le produit affiché ; le dernier chiffre valide la question. */
+/**
+ * Tape le produit affiché ; le dernier chiffre valide la question ET fait
+ * apparaître la suivante dans le même tick — aucun délai à laisser passer.
+ */
 function answerCurrent(): void {
   const a = Number(screen.getByTestId("operand-a").textContent);
   const b = Number(screen.getByTestId("operand-b").textContent);
   for (const digit of String(a * b)) {
     fireEvent.click(screen.getByLabelText(`Chiffre ${digit}`));
   }
-  advance(FEEDBACK_MS); // laisse passer le feedback → question suivante
 }
 
 /** Un appui neutre : prouve la présence sans jamais valider quoi que ce soit. */
@@ -62,6 +61,30 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe("Game — enchaînement des questions", () => {
+  /**
+   * Le score est un nombre de réponses par minute : toute pause imposée après
+   * une bonne réponse se retranche du round et plafonne mécaniquement le score.
+   * La validation ne doit donc JAMAIS geler la saisie.
+   */
+  it("n'impose aucun temps mort entre deux questions", () => {
+    render(<Game operation="multiplication" />);
+
+    answerCurrent();
+    // Dans le même tick : la question a changé et le pavé reste actif.
+    expect(screen.getByLabelText("Chiffre 1")).not.toBeDisabled();
+
+    answerCurrent();
+    answerCurrent();
+
+    advance(ROUND_MS);
+    const answers = postedAnswers();
+    expect(answers).toHaveLength(3);
+    // Aucune réponse ne porte le silence d'un feedback bloquant.
+    for (const answer of answers) expect(answer.maxIdleMs).toBe(0);
+  });
 });
 
 describe("Game — mesure de l'inactivité", () => {

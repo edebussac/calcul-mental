@@ -55,6 +55,28 @@ button {
     box-shadow: inset 5px 5px 10px var(--shadow-dark),
       inset -5px -5px 10px var(--shadow-light);
   }
+  /* Validation d'une bonne réponse. Purement décoratif : la question suivante
+     est DÉJÀ active et le pavé accepte la saisie pendant toute l'animation.
+     En `outline` (et non `box-shadow`) pour ne pas écraser l'ombre `neu-inset`. */
+  .answer-flash {
+    outline: 3px solid transparent;
+    outline-offset: 4px;
+    animation: answer-flash 260ms ease-out;
+  }
+  @keyframes answer-flash {
+    0% {
+      outline-color: var(--accent);
+    }
+    100% {
+      outline-color: transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .answer-flash {
+      animation-duration: 1ms;
+    }
+  }
+
   /* État pressé d'un bouton (retour tactile) */
   .neu-pressable {
     background: var(--surface);

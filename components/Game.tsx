@@ -33,7 +33,6 @@ import { OPERATION_CONFIG, type Operation } from "@/lib/game/operations";
 
 // Durée d'un round (s). Abaissée en e2e via NEXT_PUBLIC_ROUND_SECONDS.
 const DURATION_SECONDS = Number(process.env.NEXT_PUBLIC_ROUND_SECONDS) || 60;
-const FEEDBACK_MS = 350;
 // Délai avant que les boutons de l'écran de résultat deviennent cliquables :
 // évite un tap accidentel (dernier appui du round) sur "Rejouer"/"Accueil"/…
 const RESULT_LOCK_MS = 500;
@@ -41,7 +40,6 @@ const RESULT_LOCK_MS = 500;
 const MAX_ANSWER_DIGITS = 3;
 
 type Phase = "playing" | "finished";
-type Feedback = "correct" | null;
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -84,7 +82,10 @@ export function Game({
   const [input, setInput] = useState("");
   const [timeLeft, setTimeLeft] = useState(DURATION_SECONDS);
   const [phase, setPhase] = useState<Phase>("playing");
-  const [feedback, setFeedback] = useState<Feedback>(null);
+  // Compteur de bonnes réponses servant UNIQUEMENT à rejouer l'animation de
+  // validation : il change de clé, donc React remonte la case et l'animation
+  // repart. Purement décoratif — il ne conditionne jamais la saisie.
+  const [flash, setFlash] = useState(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "done" | "error">(
     "idle",
   );
@@ -96,14 +97,15 @@ export function Game({
   // Source de vérité SYNCHRONE de la saisie : évite qu'un 2e appui rapide,
   // survenu avant le re-rendu, reparte de l'ancienne valeur et perde un chiffre.
   const inputRef = useRef("");
+  // Même raison que `inputRef` : la question suivante est posée SYNCHRONEMENT,
+  // sinon un appui survenu avant le re-rendu validerait encore la précédente et
+  // compterait une réponse en trop.
+  const questionRef = useRef<Question | null>(null);
   // Mode adaptatif : stats par fait (mises à jour EN COURS de partie), pool
   // pondéré recalculé après chaque réponse, et faits récemment posés.
   const statsRef = useRef<Map<string, FactStat>>(new Map());
   const poolRef = useRef<WeightedFact[] | null>(null);
   const recentlyAskedRef = useRef<string[]>([]);
-  // Verrou SYNCHRONE : empêche une 2e validation avant que le feedback (état
-  // async) ne désactive le pavé — sinon un tap rapide compte une réponse en trop.
-  const lockRef = useRef(false);
   // Inactivité pendant la question courante : tout appui la remet à zéro, ce
   // qui permet de distinguer « bloqué mais il cherche » de « parti jouer ».
   const activityRef = useRef<Activity>(startActivity(0));
@@ -165,6 +167,7 @@ export function Game({
     } else {
       q = generateQuestion(operation, { min: 1, max: 10 });
     }
+    questionRef.current = q;
     setQuestion(q);
     inputRef.current = "";
     setInput("");
@@ -199,11 +202,14 @@ export function Game({
     return () => clearInterval(id);
   }, [phase]);
 
-  // Appelé UNIQUEMENT quand la bonne réponse est trouvée : vert + vibration,
-  // puis on passe au calcul suivant. Aucune sanction en cas d'erreur.
+  // Appelé UNIQUEMENT quand la bonne réponse est trouvée : vibration, flash,
+  // puis calcul suivant IMMÉDIAT. Aucune sanction en cas d'erreur.
+  //
+  // Le jeu se joue au nombre de réponses par minute : toute pause imposée ici
+  // se retranche du round et plafonne le score. La validation ne doit donc
+  // jamais geler la saisie — le flash est une animation qui ne bloque rien.
   const markCorrect = useCallback(
-    (q: Question, value: string) => {
-      lockRef.current = true;
+    (q: Question) => {
       const now = Date.now();
       const responseMs = now - questionStart.current;
       // L'appui qui vient de donner la bonne réponse a déjà été enregistré
@@ -219,24 +225,20 @@ export function Game({
       setSession(nextSession);
       // Réactivité intra-partie : nourrit le pool avec ce temps de réponse.
       applyAdaptiveAttempt(q.a, q.b, responseMs, idleMs);
-      inputRef.current = value;
-      setInput(value);
       haptic(); // vibration à chaque bonne réponse
-      setFeedback("correct");
-      setTimeout(() => {
-        setFeedback(null);
-        if (phaseRef.current === "playing") {
-          nextQuestion();
-          lockRef.current = false;
-        }
-      }, FEEDBACK_MS);
+      setFlash((n) => n + 1);
+      nextQuestion();
     },
     [nextQuestion, applyAdaptiveAttempt],
   );
 
   const handleDigit = useCallback(
     (digit: number) => {
-      if (lockRef.current || phaseRef.current !== "playing" || !question) return;
+      if (phaseRef.current !== "playing") return;
+      // Lecture SYNCHRONE : `question` (état) peut encore désigner la question
+      // précédente si l'appui précède le re-rendu.
+      const q = questionRef.current;
+      if (!q) return;
       // Signe de vie, AVANT toute autre condition : même un appui refusé parce
       // que la saisie est pleine prouve que l'enfant est devant l'écran.
       activityRef.current = registerActivity(activityRef.current, Date.now());
@@ -247,13 +249,13 @@ export function Game({
       inputRef.current = next;
       setInput(next);
       // On ne valide QUE si le calcul est trouvé ; sinon on laisse écrire.
-      if (Number(next) === question.answer) markCorrect(question, next);
+      if (Number(next) === q.answer) markCorrect(q);
     },
-    [question, markCorrect],
+    [markCorrect],
   );
 
   const handleDelete = useCallback(() => {
-    if (lockRef.current || phaseRef.current !== "playing") return;
+    if (phaseRef.current !== "playing") return;
     activityRef.current = registerActivity(activityRef.current, Date.now());
     const next = inputRef.current.slice(0, -1);
     inputRef.current = next;
@@ -261,7 +263,7 @@ export function Game({
   }, []);
 
   const handleReset = useCallback(() => {
-    if (lockRef.current || phaseRef.current !== "playing") return;
+    if (phaseRef.current !== "playing") return;
     activityRef.current = registerActivity(activityRef.current, Date.now());
     inputRef.current = "";
     setInput("");
@@ -296,13 +298,11 @@ export function Game({
 
   const restart = () => {
     savedRef.current = false;
-    lockRef.current = false;
     inputRef.current = "";
     setSaveState("idle");
     setSession(initialSession);
     sessionRef.current = initialSession;
     setTimeLeft(DURATION_SECONDS);
-    setFeedback(null);
     setPhase("playing");
     nextQuestion();
   };
@@ -316,9 +316,6 @@ export function Game({
       />
     );
   }
-
-  // Vert quand trouvé, sinon couleur d'écriture normale (jamais de rouge).
-  const inputColor = feedback === "correct" ? "text-accent-strong" : "text-text";
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-6 pb-8 pt-6">
@@ -345,8 +342,11 @@ export function Game({
         </p>
 
         <div
+          key={flash}
           data-testid="answer"
-          className={`neu-inset flex h-24 w-24 items-center justify-center rounded-2xl text-4xl font-bold ${inputColor}`}
+          className={`neu-inset flex h-24 w-24 items-center justify-center rounded-2xl text-4xl font-bold text-text ${
+            flash > 0 ? "answer-flash" : ""
+          }`}
         >
           {input === "" ? <span className="text-muted">?</span> : input}
         </div>
@@ -372,7 +372,6 @@ export function Game({
         onDigit={handleDigit}
         onDelete={handleDelete}
         onReset={handleReset}
-        disabled={!!feedback}
       />
     </main>
   );
