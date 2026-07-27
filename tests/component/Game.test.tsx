@@ -108,9 +108,23 @@ describe("Game — écho du résultat trouvé", () => {
     expect(screen.getByTestId("answer-echo")).toHaveTextContent(String(a * b));
     expect(screen.getByLabelText("Chiffre 1")).not.toBeDisabled();
 
+    // La case entière passe au vert, pas un contour.
+    expect(screen.getByTestId("answer")).toHaveClass("answer-correct");
+
     // Il s'efface tout seul.
     advance(1000);
     expect(screen.queryByTestId("answer-echo")).not.toBeInTheDocument();
+    // Le vert part AU MÊME MOMENT : une seule condition les pilote.
+    expect(screen.getByTestId("answer")).not.toHaveClass("answer-correct");
+  });
+
+  it("rend la case au gris dès la première frappe", () => {
+    render(<Game operation="multiplication" />);
+    answerCurrent();
+    expect(screen.getByTestId("answer")).toHaveClass("answer-correct");
+
+    press("Chiffre 0");
+    expect(screen.getByTestId("answer")).not.toHaveClass("answer-correct");
   });
 
   // Le 0 est la seule frappe qui ne puisse JAMAIS valider (les réponses vont de

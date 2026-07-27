@@ -11,7 +11,11 @@ import {
   recordAnswer,
   type SessionState,
 } from "@/lib/game/engine";
-import { generateQuestion, type Question } from "@/lib/game/generator";
+import {
+  drawDistinctQuestion,
+  generateQuestion,
+  type Question,
+} from "@/lib/game/generator";
 import {
   ADAPTIVE_PARAMS,
   buildFactPool,
@@ -87,12 +91,9 @@ export function Game({
   const [input, setInput] = useState("");
   const [timeLeft, setTimeLeft] = useState(DURATION_SECONDS);
   const [phase, setPhase] = useState<Phase>("playing");
-  // Compteur de bonnes réponses servant UNIQUEMENT à rejouer l'animation de
-  // validation : il change de clé, donc React remonte la case et l'animation
-  // repart. Purement décoratif — il ne conditionne jamais la saisie.
-  const [flash, setFlash] = useState(0);
   // Résultat qu'on vient de valider, montré brièvement pendant que la question
-  // suivante est déjà jouable. `null` dès qu'il est périmé ou recouvert.
+  // suivante est déjà jouable. Pilote aussi le vert de la case. `null` dès
+  // qu'il est périmé ou recouvert. Purement décoratif : ne freine rien.
   const [echo, setEcho] = useState<number | null>(null);
   const echoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "done" | "error">(
@@ -166,15 +167,23 @@ export function Game({
 
   const nextQuestion = useCallback(() => {
     const pool = poolRef.current;
-    let q: Question;
-    if (adaptive && pool && pool.length > 0) {
-      // Points faibles : tirage pondéré, en évitant les 2 derniers faits.
-      const fact = pickFact(pool, Math.random, recentlyAskedRef.current);
-      const key = factKey(fact.a, fact.b);
+    const weighted = adaptive && pool && pool.length > 0 ? pool : null;
+
+    // Points faibles : tirage pondéré, en évitant les 2 derniers faits.
+    const draw = weighted
+      ? () => factToQuestion(pickFact(weighted, Math.random, recentlyAskedRef.current))
+      : () => generateQuestion(operation, { min: 1, max: 10 });
+
+    // `questionRef` porte encore la question sortante : c'est sa réponse qu'on
+    // s'interdit de reproposer (elle reste affichée en écho). `null` à la
+    // première question. Deux faits distincts peuvent partager une réponse
+    // (2×6 et 3×4), d'où un filtre sur la RÉPONSE et non sur le fait.
+    const q = drawDistinctQuestion(draw, questionRef.current?.answer ?? null);
+
+    if (weighted) {
+      // Après le tirage retenu, jamais sur ceux qu'on a écartés.
+      const key = factKey(q.a, q.b);
       recentlyAskedRef.current = [key, ...recentlyAskedRef.current].slice(0, 2);
-      q = factToQuestion(fact);
-    } else {
-      q = generateQuestion(operation, { min: 1, max: 10 });
     }
     questionRef.current = q;
     setQuestion(q);
@@ -211,12 +220,13 @@ export function Game({
     return () => clearInterval(id);
   }, [phase]);
 
-  // Appelé UNIQUEMENT quand la bonne réponse est trouvée : vibration, flash,
-  // puis calcul suivant IMMÉDIAT. Aucune sanction en cas d'erreur.
+  // Appelé UNIQUEMENT quand la bonne réponse est trouvée : vibration, écho du
+  // résultat, puis calcul suivant IMMÉDIAT. Aucune sanction en cas d'erreur.
   //
   // Le jeu se joue au nombre de réponses par minute : toute pause imposée ici
   // se retranche du round et plafonne le score. La validation ne doit donc
-  // jamais geler la saisie — le flash est une animation qui ne bloque rien.
+  // jamais geler la saisie — l'écho s'affiche par-dessus une question déjà
+  // jouable, et la première frappe le recouvre.
   const markCorrect = useCallback(
     (q: Question) => {
       const now = Date.now();
@@ -235,7 +245,6 @@ export function Game({
       // Réactivité intra-partie : nourrit le pool avec ce temps de réponse.
       applyAdaptiveAttempt(q.a, q.b, responseMs, idleMs);
       haptic(); // vibration à chaque bonne réponse
-      setFlash((n) => n + 1);
       // Écho du résultat trouvé : `nextQuestion` vide la saisie juste après,
       // sinon il ne resterait que le contour vert sur une case vide.
       setEcho(q.answer);
@@ -343,6 +352,10 @@ export function Game({
     );
   }
 
+  // Le vert et le résultat apparaissent et disparaissent ENSEMBLE, d'un coup :
+  // une seule condition les pilote tous les deux.
+  const showingEcho = input === "" && echo !== null;
+
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col px-6 pb-8 pt-6">
       <header className="flex items-center justify-between">
@@ -368,20 +381,17 @@ export function Game({
         </p>
 
         <div
-          key={flash}
           data-testid="answer"
           className={`neu-inset flex h-24 w-24 items-center justify-center rounded-2xl text-4xl font-bold text-text ${
-            flash > 0 ? "answer-flash" : ""
+            showingEcho ? "answer-correct" : ""
           }`}
         >
           {input !== "" ? (
             input
-          ) : echo !== null ? (
+          ) : showingEcho ? (
             // Le résultat qu'on vient de trouver, le temps de le lire. La
             // saisie le recouvre dès la première frappe : `input` passe avant.
-            <span data-testid="answer-echo" className="answer-echo text-accent-strong">
-              {echo}
-            </span>
+            <span data-testid="answer-echo">{echo}</span>
           ) : (
             <span className="text-muted">?</span>
           )}

@@ -55,46 +55,16 @@ button {
     box-shadow: inset 5px 5px 10px var(--shadow-dark),
       inset -5px -5px 10px var(--shadow-light);
   }
-  /* Validation d'une bonne réponse. Purement décoratif : la question suivante
-     est DÉJÀ active et le pavé accepte la saisie pendant toute l'animation.
-     En `outline` (et non `box-shadow`) pour ne pas écraser l'ombre `neu-inset`. */
-  .answer-flash {
-    outline: 3px solid transparent;
-    outline-offset: 4px;
-    animation: answer-flash 260ms ease-out;
-  }
-  @keyframes answer-flash {
-    0% {
-      outline-color: var(--accent);
-    }
-    100% {
-      outline-color: transparent;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .answer-flash {
-      animation-duration: 1ms;
-    }
-  }
+  /* Bonne réponse : la case elle-même passe au vert le temps qu'on lise le
+     résultat, puis revient au gris D'UN COUP — aucune transition, aucun fondu.
+     C'est ce qui donne le tempo sec du jeu ; un effacement progressif ferait
+     traîner ce qui doit claquer. Déclaré APRÈS `.neu-inset` pour l'emporter à
+     spécificité égale, tout en gardant son ombre creusée.
 
-  /* Écho du résultat trouvé : bien lisible d'abord, puis s'efface. La durée
-     suit `ANSWER_ECHO_MS` (Game.tsx), qui retire la valeur au même moment. */
-  .answer-echo {
-    animation: answer-echo 800ms ease-in forwards;
-  }
-  @keyframes answer-echo {
-    0%,
-    55% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .answer-echo {
-      animation: none;
-    }
+     Seul le fond change : le texte sombre reste, il contraste bien mieux sur ce
+     vert clair que du blanc (~11:1 contre ~1,9:1). */
+  .answer-correct {
+    background: var(--accent);
   }
 
   /* État pressé d'un bouton (retour tactile) */

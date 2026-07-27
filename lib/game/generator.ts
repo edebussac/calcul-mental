@@ -91,6 +91,37 @@ export function generateQuestion(
   }
 }
 
+/**
+ * Nombre de tirages tentés pour éviter de répéter une réponse. Au-delà, on
+ * garde le dernier : mieux vaut une répétition qu'une boucle sans fin, et
+ * chaque opération dispose de bien assez de réponses distinctes pour que ce
+ * plafond ne soit jamais atteint en pratique.
+ */
+export const MAX_DRAW_ATTEMPTS = 8;
+
+/**
+ * Tire une question dont la réponse DIFFÈRE de la précédente.
+ *
+ * Deux raisons de ne pas enchaîner deux fois le même résultat :
+ * le résultat qu'on vient de trouver reste affiché quelques instants à l'écran
+ * (écho), donc une question qui a la même réponse est simplement donnée ; et
+ * enchaîner 3×4 puis 4×3 fait répéter sans rien faire travailler.
+ *
+ * Le tirage est injecté, ce qui rend la règle testable sans hasard : elle vaut
+ * aussi bien pour le tirage aléatoire que pour le tirage adaptatif.
+ */
+export function drawDistinctQuestion(
+  draw: () => Question,
+  previousAnswer: number | null,
+  maxAttempts: number = MAX_DRAW_ATTEMPTS,
+): Question {
+  let question = draw();
+  for (let i = 1; i < maxAttempts && question.answer === previousAnswer; i++) {
+    question = draw();
+  }
+  return question;
+}
+
 /** Représentation lisible d'une question, ex. "4 × 3". */
 export function formatQuestion(question: Question, symbol: string): string {
   return `${question.a} ${symbol} ${question.b}`;
