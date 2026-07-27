@@ -23,6 +23,11 @@ Sur iPhone : ouvrir l'URL dans Safari → Partager → « Sur l'écran d'accueil
 ## Architecture
 
 - `lib/game/` — logique de jeu **pure** (génération, score, série), sans React ni DB.
+  - `activity.ts` — mesure la plus longue plage sans appui pendant une question.
+    C'est ce qui sépare « bloqué mais il cherche » (temps long, frappes régulières
+    → signal de difficulté conservé) de « parti jouer » (temps long, écran figé
+    → écarté du modèle adaptatif). L'ancien filtre, qui portait sur la durée
+    totale, jetait les deux.
 - `lib/services/` — accès DB, reçoivent la connexion en paramètre (testable).
 - `app/api/` — route handlers minces (`profiles`, `sessions`, `scores`).
 - `components/`, `app/` — UI (accueil, jeu, scores).
@@ -46,3 +51,8 @@ Les migrations se lancent via `npm run db:migrate` (ou un script de build).
 
 - **v2** : autres opérations, niveaux, classements, objectif quotidien, progrès.
 - **v3** : PIN par profil, mode hors-ligne.
+
+**Cible à terme : une app mobile native (iOS puis Android).** Cette version web
+sert de banc d'essai pour la logique de jeu — voir
+[`MIGRATION-MOBILE.md`](MIGRATION-MOBILE.md) : ce qui migre, les pièges, et les
+décisions en attente.
