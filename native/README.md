@@ -59,15 +59,17 @@ racine du dépôt.
 ## État
 
 Étapes 1 à 3 du plan de migration faites : squelette, persistance locale, et les
-écrans d'accueil et de jeu (avec son pavé numérique).
+écrans (accueil, jeu, scores) avec le pavé numérique.
 
-Restent à construire :
+Les **niveaux** existent aussi, ce que le banc d'essai web n'a jamais eu : quatre
+plages d'opérandes, de `Facile` (1–10, le comportement historique) à
+`Légendaire` (2–100). Voir `src/lib/game/levels.ts`.
 
-- l'écran **des scores** (`src/app/scores.tsx` est un substitut) — les services
-  qui l'alimentent (`bestScores`, `multiplicationFactStats`) sont déjà portés et
-  testés ;
-- le **niveau** (Facile → Légendaire) et le **mode vocal**, présentés « à venir »
-  dans la feuille de configuration parce qu'ils n'existent pas dans le code.
+Reste « à venir », et présenté comme tel dans l'app : le **mode vocal**.
+
+Ce qui n'a pas encore été vu sur un vrai téléphone (§9 du doc de migration) :
+l'haptique, le ressenti de la saisie, et le chevauchement réel de deux doigts
+sur le pavé.
 
 Règles de contribution : [`AGENTS.md`](AGENTS.md).
 Contexte, décisions et pièges : [`../MIGRATION-MOBILE.md`](../MIGRATION-MOBILE.md).

@@ -8,8 +8,15 @@
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
+import {
+  DEFAULT_LEVEL,
+  LEVELS,
+  LEVEL_CONFIG,
+  type Level,
+} from "@/lib/game/levels";
 import { OPERATION_CONFIG } from "@/lib/game/operations";
 import type { Operation } from "@/lib/game/operations";
 import type { SessionMode } from "@/lib/services/sessions";
@@ -18,13 +25,30 @@ import { colors, radius, spacing } from "@/theme";
 /** Une partie dure 60 s (repris du banc d'essai, `DURATION_SECONDS`). */
 const ROUND_SECONDS = 60;
 
+/** Icône et teinte de chaque niveau, dans l'ordre de la maquette. */
+const LEVEL_STYLE: Record<
+  Level,
+  {
+    icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
+    tint: string;
+    soft: string;
+  }
+> = {
+  1: { icon: "emoticon-happy-outline", tint: colors.green, soft: colors.greenSoft },
+  2: { icon: "emoticon-neutral-outline", tint: colors.orange, soft: colors.orangeSoft },
+  3: { icon: "emoticon-sad-outline", tint: colors.red, soft: colors.redSoft },
+  4: { icon: "crown-outline", tint: colors.purple, soft: colors.purpleSoft },
+};
+
 interface Props {
   operation: Operation | null;
   onClose: () => void;
-  onStart: (operation: Operation, mode: SessionMode) => void;
+  onStart: (operation: Operation, mode: SessionMode, level: Level) => void;
 }
 
 export function OperationSheet({ operation, onClose, onStart }: Props) {
+  const [level, setLevel] = useState<Level>(DEFAULT_LEVEL);
+
   // Le ciblage adaptatif n'existe que pour la multiplication : il s'appuie sur
   // `multiplicationFactStats`, qui n'a pas d'équivalent pour les autres.
   const targetedAvailable = operation === "multiplication";
@@ -56,26 +80,43 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
           <View style={styles.headerSpacer} />
         </View>
 
-        {/* ① Niveau — la colonne `level` existe en base mais rien ne la choisit
-            ni ne la lit : le bloc est présenté, pas actif. */}
-        <SectionLabel index="1" label="Niveau" comingSoon />
+        {/* ① Niveau — une plage d'opérandes, rien d'autre. La plage est
+            affichée : « Difficile » seul ne dit pas ce qu'on choisit. */}
+        <SectionLabel index="1" label="Niveau" />
         <View style={styles.row}>
-          <LevelCard
-            icon="emoticon-happy-outline"
-            label="Facile"
-            tint={colors.green}
-          />
-          <LevelCard
-            icon="emoticon-neutral-outline"
-            label="Moyen"
-            tint={colors.orange}
-          />
-          <LevelCard
-            icon="emoticon-sad-outline"
-            label="Difficile"
-            tint={colors.red}
-          />
-          <LevelCard icon="crown-outline" label="Légendaire" tint={colors.purple} />
+          {LEVELS.map((id) => {
+            const config = LEVEL_CONFIG[id];
+            const style = LEVEL_STYLE[id];
+            const selected = id === level;
+            return (
+              <Pressable
+                key={id}
+                style={[
+                  styles.card,
+                  styles.levelCard,
+                  selected && {
+                    borderColor: style.tint,
+                    backgroundColor: style.soft,
+                  },
+                ]}
+                onPress={() => setLevel(id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+              >
+                <MaterialCommunityIcons
+                  name={style.icon}
+                  size={26}
+                  color={style.tint}
+                />
+                <Text style={styles.cardLabel} numberOfLines={1}>
+                  {config.label}
+                </Text>
+                <Text style={styles.cardRange}>
+                  {config.min}–{config.max}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
         {/* ② Mode de réponse — la saisie au pavé existe ; le vocal, non. */}
@@ -96,7 +137,8 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
         </View>
 
         {/* ③ Mode d'entraînement — le ciblage adaptatif est développé, mais
-            seulement pour la multiplication. */}
+            seulement pour la multiplication. Il ignore le niveau : ses
+            questions viennent de l'historique, pas d'une plage. */}
         <SectionLabel index="3" label="Mode d'entraînement" />
         <View style={styles.row}>
           <OptionCard
@@ -110,10 +152,12 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
             label="Ciblé (points faibles)"
             tint={colors.blue}
             disabled={!targetedAvailable}
-            note={targetedAvailable ? undefined : "multiplication seulement"}
+            note={
+              targetedAvailable ? "ignore le niveau" : "multiplication seulement"
+            }
             onPress={
               targetedAvailable && operation
-                ? () => onStart(operation, "adaptive")
+                ? () => onStart(operation, "adaptive", level)
                 : undefined
             }
           />
@@ -121,7 +165,7 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
 
         <Pressable
           style={styles.cta}
-          onPress={() => operation && onStart(operation, "classic")}
+          onPress={() => operation && onStart(operation, "classic", level)}
           accessibilityRole="button"
         >
           <Ionicons name="play" size={18} color={colors.white} />
@@ -155,24 +199,6 @@ function SectionLabel({
       </View>
       <Text style={styles.sectionLabel}>{label.toUpperCase()}</Text>
       {comingSoon ? <Text style={styles.comingSoonTag}>à venir</Text> : null}
-    </View>
-  );
-}
-
-/** Carte de niveau : toujours inactive tant que le niveau n'existe pas. */
-function LevelCard({
-  icon,
-  label,
-  tint,
-}: {
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"];
-  label: string;
-  tint: string;
-}) {
-  return (
-    <View style={[styles.card, styles.levelCard, styles.cardDisabled]}>
-      <MaterialCommunityIcons name={icon} size={26} color={tint} />
-      <Text style={[styles.cardLabel, styles.cardLabelDisabled]}>{label}</Text>
     </View>
   );
 }
@@ -299,7 +325,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  levelCard: { paddingVertical: spacing.md, gap: spacing.xs },
+  levelCard: { paddingVertical: spacing.md, gap: 2 },
   optionCard: { paddingVertical: spacing.lg, paddingHorizontal: spacing.sm },
   optionInner: {
     flexDirection: "row",
@@ -308,8 +334,9 @@ const styles = StyleSheet.create({
   },
   cardSelected: { borderColor: colors.green, backgroundColor: colors.greenSoft },
   cardDisabled: { backgroundColor: colors.surface, borderColor: colors.border },
-  cardLabel: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
+  cardLabel: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
   cardLabelDisabled: { color: colors.textDisabled },
+  cardRange: { fontSize: 11, color: colors.textSecondary },
   cardNote: {
     fontSize: 10,
     color: colors.textDisabled,

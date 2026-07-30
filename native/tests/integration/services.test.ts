@@ -149,6 +149,18 @@ describe("sessions service", () => {
     expect(android.platform).toBe("android");
   });
 
+  it("persiste le niveau choisi, et retombe sur 1 s'il est omis", async () => {
+    // Le niveau détermine la plage d'opérandes : sans lui en base, deux
+    // parties de difficultés opposées seraient indiscernables dans
+    // l'historique, et les scores incomparables entre eux.
+    const profile = await getOrCreateProfile(db, "Sacha");
+    const base = { ...sessionBase(profile.id), answers: [answer(2, 2, 4)] };
+    const legendaire = await saveSession(db, { ...base, level: 4 });
+    const parDefaut = await saveSession(db, base);
+    expect(legendaire.level).toBe(4);
+    expect(parDefaut.level).toBe(1);
+  });
+
   it("persiste le clientUuid, absent par défaut", async () => {
     const profile = await getOrCreateProfile(db, "Chloé");
     const base = { ...sessionBase(profile.id), answers: [answer(2, 2, 4)] };

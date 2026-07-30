@@ -1,6 +1,7 @@
 import { Redirect, useLocalSearchParams } from "expo-router";
 
 import { Game } from "@/components/Game";
+import { DEFAULT_LEVEL, isLevel } from "@/lib/game/levels";
 import { isOperation } from "@/lib/game/operations";
 
 /**
@@ -9,9 +10,10 @@ import { isOperation } from "@/lib/game/operations";
  * périmé) renvoie à l'accueil plutôt que de planter.
  */
 export default function PlayScreen() {
-  const { operation, mode } = useLocalSearchParams<{
+  const { operation, mode, level } = useLocalSearchParams<{
     operation: string;
     mode?: string;
+    level?: string;
   }>();
 
   if (!isOperation(operation)) return <Redirect href="/" />;
@@ -20,5 +22,9 @@ export default function PlayScreen() {
   // `multiplicationFactStats`, sans équivalent pour les autres opérations.
   const adaptive = mode === "adaptive" && operation === "multiplication";
 
-  return <Game operation={operation} adaptive={adaptive} />;
+  // Un niveau absent ou farfelu retombe sur `Facile` — jamais d'erreur pour un
+  // paramètre d'URL, qui n'est pas sous le contrôle de l'app.
+  const parsedLevel = isLevel(level) ? (Number(level) as 1 | 2 | 3 | 4) : DEFAULT_LEVEL;
+
+  return <Game operation={operation} adaptive={adaptive} level={parsedLevel} />;
 }

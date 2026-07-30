@@ -11,9 +11,10 @@
  * | `platform: "web"`            | `Platform.OS`                           |
  * | `crypto.randomUUID()`        | `clientUuid()`                          |
  *
- * Les constantes de règles de jeu (durée du round, nombre de chiffres) restent
- * ici faute de mieux, comme sur le web — mais aucune ne freine la saisie, ce
- * que le §4.3 du doc de migration interdit.
+ * La durée du round reste ici faute de mieux, comme sur le web — mais elle ne
+ * freine pas la saisie, ce que le §4.3 du doc de migration interdit. Le nombre
+ * de chiffres saisissables, lui, n'est plus une constante : il est dérivé du
+ * niveau par `lib/game/levels.ts`, où il est testé.
  */
 
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -51,6 +52,12 @@ import {
   generateQuestion,
   type Question,
 } from "@/lib/game/generator";
+import {
+  DEFAULT_LEVEL,
+  levelRange,
+  maxAnswerDigits,
+  type Level,
+} from "@/lib/game/levels";
 import { OPERATION_CONFIG, type Operation } from "@/lib/game/operations";
 import { haptic } from "@/lib/haptics";
 import { useProfile } from "@/lib/profile";
@@ -66,8 +73,6 @@ import { colors, radius, shadow, spacing } from "@/theme";
 const DURATION_SECONDS = 60;
 /** Verrou anti-tap accidentel sur l'écran de résultat (dernier appui du round). */
 const RESULT_LOCK_MS = 500;
-/** Réponses ≤ 100 (10×10) → 3 chiffres max. */
-const MAX_ANSWER_DIGITS = 3;
 /**
  * Durée d'affichage, en écho, du résultat qu'on vient de trouver. PUREMENT
  * décoratif : l'écho s'efface dès la première frappe et ne retient jamais le
@@ -109,13 +114,22 @@ function formatSeconds(ms: number): string {
 export function Game({
   operation,
   adaptive = false,
+  level = DEFAULT_LEVEL,
 }: {
   operation: Operation;
   adaptive?: boolean;
+  /**
+   * Plage d'opérandes. **Sans effet en mode adaptatif** : les questions y sont
+   * tirées de l'historique du joueur, pas d'une plage (cf. `nextQuestion`).
+   */
+  level?: Level;
 }) {
   const router = useRouter();
   const { profile, ready } = useProfile();
   const config = OPERATION_CONFIG[operation];
+  // Dérivé du niveau : à Légendaire une multiplication atteint 10 000, que la
+  // borne figée à 3 chiffres du banc d'essai rendrait impossible à saisir.
+  const maxDigits = maxAnswerDigits(operation, level);
 
   const [session, setSession] = useState<SessionState>(initialSession);
   const [question, setQuestion] = useState<Question | null>(null);
@@ -191,12 +205,14 @@ export function Game({
     const pool = poolRef.current;
     const weighted = adaptive && pool && pool.length > 0 ? pool : null;
 
+    // En mode ciblé, la plage du niveau ne s'applique pas : le pool vient de
+    // l'historique de multiplication du joueur, qui a ses propres faits.
     const draw = weighted
       ? () =>
           factToQuestion(
             pickFact(weighted, Math.random, recentlyAskedRef.current),
           )
-      : () => generateQuestion(operation, { min: 1, max: 10 });
+      : () => generateQuestion(operation, levelRange(level));
 
     // `questionRef` porte encore la question sortante : c'est sa réponse qu'on
     // s'interdit de reproposer (elle reste affichée en écho).
@@ -213,7 +229,7 @@ export function Game({
     const now = Date.now();
     questionStart.current = now;
     activityRef.current = startActivity(now);
-  }, [operation, adaptive]);
+  }, [operation, adaptive, level]);
 
   // Retour à l'accueil si aucun profil sélectionné.
   useEffect(() => {
@@ -282,13 +298,13 @@ export function Game({
       // que la saisie est pleine prouve que l'enfant est devant l'écran.
       activityRef.current = registerActivity(activityRef.current, Date.now());
       const next = inputRef.current + String(digit);
-      if (next.length > MAX_ANSWER_DIGITS) return;
+      if (next.length > maxDigits) return;
       inputRef.current = next;
       setInput(next);
       // On ne valide QUE si le calcul est trouvé ; sinon on laisse écrire.
       if (Number(next) === q.answer) markCorrect(q);
     },
-    [markCorrect],
+    [markCorrect, maxDigits],
   );
 
   const handleDelete = useCallback(() => {
@@ -330,7 +346,7 @@ export function Game({
     void saveSession(getDb(), {
       profileId: profile.id,
       operation,
-      level: 1,
+      level,
       durationSeconds: DURATION_SECONDS - timeLeft,
       mode: adaptive ? "adaptive" : "classic",
       platform: PLATFORM,
@@ -341,7 +357,7 @@ export function Game({
     })
       .then(() => setSaveState("done"))
       .catch(() => setSaveState("error"));
-  }, [phase, profile, operation, timeLeft, adaptive]);
+  }, [phase, profile, operation, timeLeft, adaptive, level]);
 
   const restart = useCallback(() => {
     savedRef.current = false;

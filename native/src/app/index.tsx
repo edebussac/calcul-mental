@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { OperationSheet } from "@/components/OperationSheet";
 import { ProfileSheet } from "@/components/ProfileSheet";
+import type { Level } from "@/lib/game/levels";
 import {
   OPERATION_CONFIG,
   OPERATION_MENU_ORDER,
@@ -30,9 +31,9 @@ export default function HomeScreen() {
   const [profileOpen, setProfileOpen] = useState(false);
 
   const start = useCallback(
-    (operation: Operation, mode: SessionMode) => {
+    (operation: Operation, mode: SessionMode, level: Level) => {
       setSheetOperation(null);
-      router.push(`/play/${operation}?mode=${mode}`);
+      router.push(`/play/${operation}?mode=${mode}&level=${level}`);
     },
     [router],
   );
