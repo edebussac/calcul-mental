@@ -1,162 +1,194 @@
 /**
- * Écran de fumée de l'étape 2 — provisoire, remplacé à l'étape 3.
+ * Accueil — choix du profil et de l'entraînement.
  *
- * Il fait exercer par Hermes ce que les tests ne peuvent pas atteindre : le
- * chemin réel `expo-sqlite` (les tests, eux, adossent les mêmes services à
- * better-sqlite3 sous Node). Une partie est écrite puis relue, migrations
- * comprises. Si cet écran affiche des compteurs qui montent, la persistance
- * locale tient sur l'appareil.
+ * Les 5 opérations sont actives : le moteur sait toutes les jouer depuis le
+ * commit c53d053. Ce qui porte « à venir », c'est ce qui n'existe pas dans le
+ * code — le niveau et le mode vocal, dans la feuille de configuration.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { getDb } from "@/lib/db/client";
-import { generateQuestion } from "@/lib/game/generator";
-import { getOrCreateProfile } from "@/lib/services/profiles";
+import { OperationSheet } from "@/components/OperationSheet";
+import { ProfileSheet } from "@/components/ProfileSheet";
 import {
-  bestScoreFor,
-  recentSessions,
-  saveSession,
-  type Platform as SessionPlatform,
-} from "@/lib/services/sessions";
-import type { AnswerRecord } from "@/lib/game/engine";
+  OPERATION_CONFIG,
+  OPERATION_MENU_ORDER,
+  type Operation,
+} from "@/lib/game/operations";
+import { useProfile } from "@/lib/profile";
+import type { SessionMode } from "@/lib/services/sessions";
+import { colors, radius, shadow, spacing } from "@/theme";
 
-/** `platform` est requis par saveSession — pas de défaut silencieux. */
-const CURRENT_PLATFORM: SessionPlatform =
-  Platform.OS === "android" ? "android" : Platform.OS === "ios" ? "ios" : "web";
+export default function HomeScreen() {
+  const router = useRouter();
+  const { profile, setProfile, ready } = useProfile();
+  const [sheetOperation, setSheetOperation] = useState<Operation | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
-interface Snapshot {
-  profile: string;
-  plays: number;
-  bestScore: number;
-  lastAnswers: number;
-  error?: string;
-}
+  const start = useCallback(
+    (operation: Operation, mode: SessionMode) => {
+      setSheetOperation(null);
+      router.push(`/play/${operation}?mode=${mode}`);
+    },
+    [router],
+  );
 
-/** Joue une fausse partie de 3 questions, dont 2 justes. */
-function fakeRound(): AnswerRecord[] {
-  return [0, 1, 2].map((i) => {
-    const q = generateQuestion("multiplication");
-    const given = i === 2 ? q.answer + 1 : q.answer; // la 3e est fausse
-    return {
-      a: q.a,
-      b: q.b,
-      operation: "multiplication" as const,
-      expected: q.answer,
-      given,
-      isCorrect: given === q.answer,
-      responseMs: 1200 + i * 100,
-      maxIdleMs: 0,
-    };
-  });
-}
-
-export default function SmokeScreen() {
-  const [snap, setSnap] = useState<Snapshot | null>(null);
-
-  const read = useCallback(async () => {
-    try {
-      const db = getDb();
-      const profile = await getOrCreateProfile(db, "Testeur");
-      const sessions = await recentSessions(db, profile.id, 50);
-      const best = await bestScoreFor(db, profile.id, "multiplication");
-      setSnap({
-        profile: profile.name,
-        plays: sessions.length,
-        bestScore: best,
-        lastAnswers: sessions[0]?.totalQuestions ?? 0,
-      });
-    } catch (e) {
-      setSnap({
-        profile: "—",
-        plays: 0,
-        bestScore: 0,
-        lastAnswers: 0,
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
-  }, []);
-
-  const play = useCallback(async () => {
-    const db = getDb();
-    const profile = await getOrCreateProfile(db, "Testeur");
-    await saveSession(db, {
-      profileId: profile.id,
-      operation: "multiplication",
-      durationSeconds: 60,
-      platform: CURRENT_PLATFORM,
-      answers: fakeRound(),
-    });
-    await read();
-  }, [read]);
-
-  useEffect(() => {
-    void read();
-  }, [read]);
+  // Tant que le profil n'est pas lu, on n'affiche pas la feuille : elle
+  // s'ouvrirait puis se refermerait aussitôt sur un profil déjà enregistré.
+  const needsProfile = ready && !profile;
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.body}>
-        <Text style={styles.title}>Persistance locale</Text>
-        <Text style={styles.subtitle}>
-          expo-sqlite · plateforme « {CURRENT_PLATFORM} »
-        </Text>
+    <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.screenTitle}>Tests</Text>
+          <Pressable
+            style={styles.profileChip}
+            onPress={() => setProfileOpen(true)}
+            accessibilityRole="button"
+          >
+            <Ionicons name="person-outline" size={17} color={colors.textPrimary} />
+            <Text style={styles.profileChipText}>
+              {profile?.name ?? "Profil"}
+            </Text>
+          </Pressable>
+        </View>
 
-        {snap?.error ? (
-          <Text style={styles.error}>{snap.error}</Text>
-        ) : (
-          <>
-            <Row label="Profil" value={snap?.profile ?? "…"} />
-            <Row label="Parties enregistrées" value={String(snap?.plays ?? 0)} />
-            <Row label="Meilleur score" value={String(snap?.bestScore ?? 0)} />
-            <Row
-              label="Questions (dernière)"
-              value={String(snap?.lastAnswers ?? 0)}
-            />
-          </>
-        )}
-
-        <Pressable style={styles.button} onPress={play}>
-          <Text style={styles.buttonText}>Enregistrer une partie</Text>
+        <Pressable
+          style={styles.scoresCard}
+          onPress={() => router.push("/scores")}
+          accessibilityRole="button"
+        >
+          <View style={[styles.iconChip, styles.iconChipGreen]}>
+            <Ionicons name="trending-up" size={22} color={colors.green} />
+          </View>
+          <View style={styles.scoresText}>
+            <Text style={styles.scoresTitle}>Mes meilleurs scores</Text>
+            <Text style={styles.scoresSubtitle}>Historique enregistré</Text>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={colors.textSecondary}
+          />
         </Pressable>
-      </View>
+
+        <Text style={styles.sectionLabel}>CHOISIS UN ENTRAÎNEMENT</Text>
+
+        <View style={styles.list}>
+          {OPERATION_MENU_ORDER.map((operation, i) => {
+            const config = OPERATION_CONFIG[operation];
+            return (
+              <Pressable
+                key={operation}
+                style={[styles.row, i > 0 && styles.rowDivided]}
+                onPress={() => setSheetOperation(operation)}
+                accessibilityRole="button"
+              >
+                <View style={[styles.iconChip, styles.iconChipGreen]}>
+                  <Text style={styles.symbol}>{config.symbol}</Text>
+                </View>
+                <Text style={styles.rowLabel}>{config.label}</Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
+
+      <OperationSheet
+        operation={sheetOperation}
+        onClose={() => setSheetOperation(null)}
+        onStart={start}
+      />
+
+      <ProfileSheet
+        visible={profileOpen || needsProfile}
+        dismissible={!needsProfile}
+        onClose={() => setProfileOpen(false)}
+        onSelect={(p) => {
+          void setProfile(p);
+          setProfileOpen(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#111" },
-  body: { flex: 1, justifyContent: "center", paddingHorizontal: 24, gap: 4 },
-  title: { color: "#fff", fontSize: 28, fontWeight: "700" },
-  subtitle: { color: "#888", fontSize: 14, marginBottom: 16 },
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.xl, gap: spacing.lg, paddingBottom: spacing.xxl },
+
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.sm,
+  },
+  screenTitle: { fontSize: 40, fontWeight: "800", color: colors.textPrimary },
+  profileChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceRaised,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    ...shadow.card,
+  },
+  profileChipText: { fontSize: 16, fontWeight: "600", color: colors.textPrimary },
+
+  scoresCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    ...shadow.card,
+  },
+  scoresText: { flex: 1, gap: 2 },
+  scoresTitle: { fontSize: 17, fontWeight: "700", color: colors.textPrimary },
+  scoresSubtitle: { fontSize: 14, color: colors.textSecondary },
+
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.8,
+    color: colors.textMuted,
+    marginTop: spacing.sm,
+  },
+
+  list: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    ...shadow.card,
+  },
   row: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#333",
+    gap: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
-  label: { color: "#888", fontSize: 16 },
-  value: { color: "#fff", fontSize: 20, fontVariant: ["tabular-nums"] },
-  error: { color: "#ff6b6b", fontSize: 14 },
-  button: {
-    marginTop: 24,
-    backgroundColor: "#2b7fff",
-    paddingVertical: 16,
-    borderRadius: 12,
+  rowDivided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  rowLabel: { flex: 1, fontSize: 17, fontWeight: "600", color: colors.textPrimary },
+
+  iconChip: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
     alignItems: "center",
+    justifyContent: "center",
   },
-  buttonText: { color: "#fff", fontSize: 17, fontWeight: "600" },
+  iconChipGreen: { backgroundColor: colors.greenSoft },
+  symbol: { fontSize: 22, fontWeight: "700", color: colors.green },
 });

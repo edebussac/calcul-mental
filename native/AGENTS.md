@@ -67,18 +67,26 @@ Reprise du §7 de [`../MIGRATION-MOBILE.md`](../MIGRATION-MOBILE.md) :
 > *chevauchement ordonné* : poser le 6 pendant que le 5 est enfoncé ne doit rien
 > perdre, et l'ordre est celui des contacts.
 
-Les `Pressable` par défaut sérialisent les touchers.
-`react-native-gesture-handler` est déjà installé pour cette raison.
+`Pressable` ne convient pas : il déclenche au **relâchement**, et le système de
+responder n'attribue le toucher qu'à une seule vue.
 
-## État provisoire
+> ⚠️ **Ne pas régler ça avec `react-native-gesture-handler`.** C'est la solution
+> qu'on attend, et elle **fait planter l'app** dans Expo Go : monter
+> `GestureHandlerRootView` ou construire un objet `Gesture` initialise
+> `react-native-worklets`, d'où un SIGSEGV natif dans
+> `worklets::JSIWorkletsModuleProxy::toOptimizedObject` → `cloneString`. Crash
+> natif, non rattrapable côté JS, et le message ne désigne jamais RNGH.
+>
+> `src/components/Keypad.tsx` s'en passe donc entièrement : **un seul responder**
+> pour tout le pavé, qui reçoit tous les touchers et rattache chacun à une touche
+> par ses coordonnées. Les touches portent `pointerEvents="none"` pour que
+> `locationX/Y` reste relatif au pavé, et chaque doigt est suivi par son
+> `identifier` — c'est ce qui donne le chevauchement ordonné.
 
-`src/app/index.tsx` est un **écran de fumée jetable**, écrit le 30/07/2026 pour
-prouver que `src/lib/game/` s'exécute bien sous Hermes (les tests, eux, tournent
-sous Node). Il n'a aucun rapport avec l'UI visée et **doit être supprimé** quand
-les 4 vrais écrans arrivent.
+## Commandes
 
-Commandes : `npm test` (vitest, sans simulateur), `npm run typecheck`,
-`npm start` (Metro — puis ouvrir `exp://127.0.0.1:8081` dans Expo Go).
+`npm test` (vitest, sans simulateur), `npm run typecheck`, `npm start` (Metro —
+puis ouvrir `exp://127.0.0.1:8081` dans Expo Go).
 
 État de la migration et décisions :
 [`../MIGRATION-MOBILE.md`](../MIGRATION-MOBILE.md).

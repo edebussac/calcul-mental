@@ -9,8 +9,9 @@ import migrations from "@/lib/db/migrations";
 /**
  * Les migrations sont appliquées **avant** le premier écran : tant qu'elles ne
  * sont pas passées, aucune table n'existe et la moindre requête échouerait.
- * Elles sont embarquées dans le bundle (cf. metro.config.js), donc aucune
- * lecture de fichier ni accès réseau n'est en jeu — l'app démarre en avion.
+ * Elles sont inlinées dans `src/lib/db/migrations.ts` (généré par
+ * `npm run db:generate`), donc aucune lecture de fichier ni accès réseau n'est
+ * en jeu — l'app démarre en avion.
  */
 export default function RootLayout() {
   const { success, error } = useMigrations(getDb(), migrations);
@@ -33,6 +34,12 @@ export default function RootLayout() {
   }
 
   return (
+    // ⚠️ Ne pas ajouter `GestureHandlerRootView` ici. Monter la racine de
+    // react-native-gesture-handler initialise react-native-worklets, ce qui
+    // fait planter Hermes en natif dans Expo Go : SIGSEGV dans
+    // `worklets::JSIWorkletsModuleProxy::toOptimizedObject` → `cloneString`.
+    // Le pavé numérique a justement été écrit sans RNGH pour cette raison
+    // (cf. `components/Keypad.tsx`).
     <SafeAreaProvider>
       <Stack screenOptions={{ headerShown: false }} />
     </SafeAreaProvider>

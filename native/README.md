@@ -58,9 +58,16 @@ racine du dépôt.
 
 ## État
 
-Étape 1 du plan de migration faite. **`src/app/index.tsx` est un écran de fumée
-provisoire** : il ne sert qu'à prouver que le cerveau s'exécute sous Hermes, et
-sera remplacé par les 4 vrais écrans (accueil, jeu, scores, résultats).
+Étapes 1 à 3 du plan de migration faites : squelette, persistance locale, et les
+écrans d'accueil et de jeu (avec son pavé numérique).
+
+Restent à construire :
+
+- l'écran **des scores** (`src/app/scores.tsx` est un substitut) — les services
+  qui l'alimentent (`bestScores`, `multiplicationFactStats`) sont déjà portés et
+  testés ;
+- le **niveau** (Facile → Légendaire) et le **mode vocal**, présentés « à venir »
+  dans la feuille de configuration parce qu'ils n'existent pas dans le code.
 
 Règles de contribution : [`AGENTS.md`](AGENTS.md).
 Contexte, décisions et pièges : [`../MIGRATION-MOBILE.md`](../MIGRATION-MOBILE.md).
