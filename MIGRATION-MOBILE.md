@@ -1,10 +1,9 @@
 # Migration vers une app mobile native
 
-> **Statut : analyse.** Ce document consigne l'état des lieux et les
-> recommandations issues de la réflexion du **27/07/2026**. Rien n'est engagé
-> sur la migration elle-même : ni la techno, ni le modèle de données, ni le
-> calendrier. En revanche les correctifs du §6, qui portent sur la version
-> actuelle, sont suivis case par case en §10.
+> **Statut : migration engagée (30/07/2026).** L'analyse initiale date du
+> **27/07/2026** ; la techno et le modèle de données sont désormais tranchés
+> (§10). L'étape 1 du plan §8 est faite : le projet Expo vit dans `native/`.
+> Le calendrier, lui, reste ouvert.
 
 ## 1. L'objectif
 
