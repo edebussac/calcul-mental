@@ -323,6 +323,10 @@ export function Game({
         level: 1,
         durationSeconds: DURATION_SECONDS - timeLeft,
         mode: adaptive ? "adaptive" : "classic",
+        platform: "web",
+        // Tiré ici, et pas au montage : `savedRef` garantit qu'on ne passe
+        // qu'une fois par partie, donc chaque partie a bien son identifiant.
+        clientUuid: crypto.randomUUID(),
         answers: finished.answers,
       }),
     })

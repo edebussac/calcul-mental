@@ -89,10 +89,19 @@ donnée d'entraînement polluée** pour un modèle qui tournera sur téléphone.
   **absolus**, non calibrés. Et surtout, un historique mêlant sessions desktop et
   mobile **fausse les percentiles eux-mêmes**.
 
-**Décision à prendre :** soit considérer les données actuelles comme jetables et
-repartir d'une base vide sur mobile (le plus simple), soit ajouter **dès
+> **Tranché le 30/07/2026 : colonne `platform` ajoutée** (migration
+> `0003_stale_killer_shrike.sql`). Les parties déjà en base sont étiquetées
+> `web` par le `DEFAULT` — elles viennent bien du banc d'essai. Le natif écrira
+> `ios` / `android`. Aucun filtre ne s'appuie encore dessus : on enregistre la
+> provenance tant qu'elle est connaissable, l'exploiter reste possible à tout
+> moment.
+
+**Décision, pour mémoire :** soit considérer les données actuelles comme jetables
+et repartir d'une base vide sur mobile (le plus simple), soit ajouter **dès
 maintenant** une colonne `platform` sur `sessions`. Cette seconde option coûte
-une migration aujourd'hui et devient **irrattrapable après coup**.
+une migration aujourd'hui et devient **irrattrapable après coup**. C'est celle
+qui a été retenue, précisément parce que l'autre est toujours accessible ensuite
+(ignorer une colonne est gratuit ; reconstituer une provenance perdue, non).
 
 ### 4.3 Les paramètres de gameplay cachés dans la couche jetable
 
@@ -117,12 +126,18 @@ Tailwind → `StyleSheet`), builds via EAS.
 | **Capacitor** (emballer l'existant) | Reste une webview : scroll caoutchouteux, clavier instable, refus fréquent sur l'App Store pour « site web emballé ». C'est exactement le « faux » qu'on veut quitter. |
 | **Swift / SwiftUI natif** | Meilleure qualité iOS possible, mais réécriture à 100 %, perte des tests, et Android = second projet from scratch. Surdimensionné ici. |
 
-### Données : local d'abord
+### Données : local d'abord, synchronisable ensuite
 
 L'archi actuelle envoie chaque partie à un Postgres cloud. Pour une app mobile
 d'entraînement, **c'est le mauvais modèle** : la base doit être **locale
-(SQLite / `expo-sqlite`)**. L'app marche en avion, et on supprime au passage le
-backend, l'hébergement Vercel et le coût Neon.
+(SQLite / `expo-sqlite`)**. L'app marche en avion, et le jeu ne dépend plus du
+réseau.
+
+⚠️ **Nuance ajoutée le 30/07/2026.** Le partage des résultats (§11) impose un
+serveur. La base locale n'est donc pas *exclusive* mais **prioritaire** : elle
+est la source de vérité, le serveur n'est qu'une destination de synchro. Le
+backend et l'hébergement ne disparaissent pas — ils cessent d'être sur le
+chemin critique d'une partie.
 
 Le schéma actuel (`profiles`, `sessions`, `answers`) migre **en forme** :
 `serial` → integer autoincrement, `timestamp` → texte ou entier,
@@ -242,8 +257,9 @@ tests unitaires recopiés à l'identique ; `npm test` doit passer vert
 immédiatement. *C'est le test qui prouve que la logique est bien découplée.*
 
 **Étape 2 — persistance locale** — `expo-sqlite`, 3 tables reprises du schéma
-Drizzle. Les fonctions de `lib/services/` gardent leur signature, seule
-l'implémentation change.
+Drizzle, **`platform` et `client_uuid` compris** (§11). Les fonctions de
+`lib/services/` gardent leur signature, seule l'implémentation change. Chaque
+partie tire son `clientUuid` (`expo-crypto`) et écrit `platform: "ios"`.
 
 **Étape 3 — UI** — Les 4 écrans (accueil, jeu, scores, résultats) en React
 Native. Pavé numérique natif, haptique via `expo-haptics` (vrai retour Taptic, en
@@ -270,15 +286,78 @@ l'archiver ensuite.
 **→ Ne pas sur-optimiser à l'aveugle les constantes de timing.** Elles se règlent
 avec un vrai appareil.
 
-## 10. Décisions en attente
+## 10. Décisions
 
-- [ ] Techno : Expo confirmé ?
-- [ ] Données : 100 % local / local + sync plus tard / garder le backend ?
-- [ ] Historique : repartir de zéro, ou ajouter une colonne `platform`
-      maintenant ? *(irrattrapable après coup)*
+Les trois premières ont été tranchées le **30/07/2026**, la veille de la
+migration.
+
+- [x] Techno : **Expo / React Native**.
+- [x] Données : **100 % local en v1, schéma prêt pour la sync**. Aucun réseau
+      dans l'app native au premier jour ; les deux colonnes que la sync exigera
+      sont déjà posées (§11).
+- [x] Historique : **conservé et étiqueté** — colonne `platform`, cf. §4.2.
 - [x] Corriger `FEEDBACK_MS` sur la version actuelle — **fait**, voir §6.1.
 - [x] Passer le pavé à `onPointerDown` sur la version actuelle — **fait**,
       voir §6.2. Reste à confirmer sur un vrai téléphone.
+
+Restent ouvertes, et **volontairement** : voir la fin du §11.
+
+## 11. Partager les résultats
+
+> **Statut : socle posé le 30/07/2026, fonctionnalité non commencée.**
+
+Le calcul mental n'est pas réservé aux enfants : la cible inclut les **adultes**.
+Et les résultats doivent pouvoir être **partagés entre utilisateurs**.
+
+### Ce que ça change — et ce que ça ne change pas
+
+Un partage entre utilisateurs impose un serveur : deux téléphones ne se voient
+pas. Mais ça ne remet pas en cause le local-first du §5. L'ordre est :
+
+1. la partie s'écrit en SQLite, immédiatement, hors ligne ;
+2. plus tard, quand le réseau est là, elle est **poussée** vers le serveur.
+
+**Le téléphone pousse seulement, il ne lit jamais son propre historique depuis
+le serveur.** C'est ce qui évite toute fusion bidirectionnelle — la classe de
+bug la plus coûteuse d'une synchro.
+
+### Les deux colonnes posées d'avance (migration `0003`)
+
+Elles ne servent à rien aujourd'hui. Elles sont là parce que les ajouter plus
+tard voudrait dire **migrer des téléphones déjà utilisés par des enfants**.
+
+| Colonne | Pourquoi elle ne peut pas attendre |
+| --- | --- |
+| `sessions.platform` | Cf. §4.2. Une session déjà écrite ne peut plus dire d'où elle vient. |
+| `sessions.client_uuid` | En SQLite local, deux téléphones produisent chacun une session `id = 1`. C'est lui, pas `id`, qui identifie une partie à la synchro : un renvoi après échec réseau ne crée alors pas de doublon. |
+| `profiles.client_uuid` | Reconnaître un profil créé hors ligne autrement que par son prénom. |
+
+Le web les renseigne déjà (`platform: "web"`, un UUID par partie) — ce qui les
+maintient testées et vivantes d'ici la migration.
+
+### Choix assumés, à ne pas sur-construire
+
+- **Cercle privé d'abord** (famille, amis). Le score est calculé par le client :
+  c'est intenable pour un classement public, sans importance entre gens qui se
+  connaissent. Un classement public honnête viendra plus tard, ou pas.
+- **Pas d'authentification.** Un profil reste un prénom. C'est cohérent avec le
+  cercle privé, et récupérable à tout moment.
+- **Pas de segmentation du classement.** Noté quand même : un adulte au clavier
+  écrase mécaniquement un enfant au pouce (§4.2). Si le classement décourage au
+  lieu de motiver, `platform`, `operation` et `level` sont déjà en base pour
+  segmenter sans migration.
+
+### Ouvert, et sans urgence
+
+Tout ce qui suit est **additif** — rien ne se perd à attendre :
+
+- L'upsert idempotent sur `client_uuid` côté serveur : la colonne est posée,
+  elle n'est pas encore exploitée.
+- La route de classement et l'UI de partage.
+- La notion d'**élève / classe** : un regroupement au-dessus des profils, donc
+  une table de plus, pas une refonte.
+- Lever l'unicité de `profiles.name` — inévitable hors du cercle familial (deux
+  « Emma »), mais un simple `DROP CONSTRAINT` le jour venu.
 
 ## Sources
 

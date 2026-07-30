@@ -134,4 +134,63 @@ describe("sessions service", () => {
     expect(classic.mode).toBe("classic");
     expect(adaptive.mode).toBe("adaptive");
   });
+
+  it("persiste la plateforme (web par défaut)", async () => {
+    const profile = await getOrCreateProfile(db, "Jules");
+    const base = {
+      profileId: profile.id,
+      operation: "multiplication" as const,
+      durationSeconds: 60,
+      answers: [answer(2, 2, 4)],
+    };
+    const implicit = await saveSession(db, base);
+    const native = await saveSession(db, { ...base, platform: "ios" });
+    expect(implicit.platform).toBe("web");
+    expect(native.platform).toBe("ios");
+  });
+
+  it("persiste le clientUuid, absent par défaut", async () => {
+    const profile = await getOrCreateProfile(db, "Chloé");
+    const base = {
+      profileId: profile.id,
+      operation: "multiplication" as const,
+      durationSeconds: 60,
+      answers: [answer(2, 2, 4)],
+    };
+    const withoutUuid = await saveSession(db, base);
+    const withUuid = await saveSession(db, { ...base, clientUuid: "uuid-a" });
+    expect(withoutUuid.clientUuid).toBeNull();
+    expect(withUuid.clientUuid).toBe("uuid-a");
+  });
+
+  it("refuse deux parties portant le même clientUuid", async () => {
+    // C'est la garantie qui rendra la synchro idempotente : renvoyer une partie
+    // après un échec réseau ne doit pas créer un doublon.
+    const profile = await getOrCreateProfile(db, "Hugo");
+    const base = {
+      profileId: profile.id,
+      operation: "multiplication" as const,
+      durationSeconds: 60,
+      answers: [answer(2, 2, 4)],
+      clientUuid: "uuid-b",
+    };
+    await saveSession(db, base);
+    await expect(saveSession(db, base)).rejects.toThrow();
+    expect(await recentSessions(db, profile.id)).toHaveLength(1);
+  });
+
+  it("laisse coexister plusieurs parties sans clientUuid", async () => {
+    // L'historique déjà en base a client_uuid NULL : la contrainte UNIQUE ne
+    // doit pas l'empêcher de grandir.
+    const profile = await getOrCreateProfile(db, "Alice");
+    const base = {
+      profileId: profile.id,
+      operation: "multiplication" as const,
+      durationSeconds: 60,
+      answers: [answer(2, 2, 4)],
+    };
+    await saveSession(db, base);
+    await saveSession(db, base);
+    expect(await recentSessions(db, profile.id)).toHaveLength(2);
+  });
 });

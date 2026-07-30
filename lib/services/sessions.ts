@@ -10,12 +10,18 @@ import type { Operation } from "@/lib/game/operations";
 
 export type SessionMode = "classic" | "adaptive";
 
+/** Support de saisie. Le portage natif reprendra ce type tel quel. */
+export type Platform = "web" | "ios" | "android";
+
 export interface SaveSessionInput {
   profileId: number;
   operation: Operation;
   level?: number;
   durationSeconds: number;
   mode?: SessionMode;
+  platform?: Platform;
+  /** Identifiant de partie tiré par le client — clé de synchro idempotente. */
+  clientUuid?: string;
   answers: AnswerRecord[];
 }
 
@@ -44,6 +50,8 @@ export async function saveSession(
         correctCount,
         score: correctCount, // le score EST le nombre de bonnes réponses
         mode: input.mode ?? "classic",
+        platform: input.platform ?? "web",
+        clientUuid: input.clientUuid,
       })
       .returning();
 

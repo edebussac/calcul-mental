@@ -20,11 +20,19 @@ vi.mock("@/lib/profile", () => ({
 const ROUND_MS = 60_000;
 let fetchMock: ReturnType<typeof vi.fn>;
 
+/** Corps de la n-ième session postée (0 = la première). */
+function postedSession(index = 0): Record<string, unknown> {
+  const calls = fetchMock.mock.calls.filter(
+    ([url]) => url === "/api/sessions",
+  );
+  const call = calls[index];
+  if (!call) throw new Error(`aucune session postée à l'indice ${index}`);
+  return JSON.parse(call[1].body);
+}
+
 /** Réponses effectivement postées à la fin du round. */
 function postedAnswers(): AnswerRecord[] {
-  const call = fetchMock.mock.calls.find(([url]) => url === "/api/sessions");
-  if (!call) throw new Error("aucune session postée");
-  return JSON.parse(call[1].body).answers;
+  return postedSession().answers as AnswerRecord[];
 }
 
 function advance(ms: number): void {
@@ -149,6 +157,40 @@ describe("Game — écho du résultat trouvé", () => {
     press(NEUTRE);
     press("Effacer"); // saisie de nouveau vide, mais la question a changé
     expect(screen.queryByTestId("answer-echo")).not.toBeInTheDocument();
+  });
+});
+
+describe("Game — provenance de la partie", () => {
+  it("déclare la plateforme et un identifiant de partie", () => {
+    render(<Game operation="multiplication" />);
+    answerCurrent();
+    advance(ROUND_MS);
+
+    const body = postedSession();
+    expect(body.platform).toBe("web");
+    expect(body.clientUuid).toEqual(expect.any(String));
+  });
+
+  /**
+   * Le piège : un UUID tiré au montage du composant serait constant, et deux
+   * parties se présenteraient à la synchro comme la même — l'une écraserait
+   * silencieusement l'autre. Il se tire une fois PAR PARTIE.
+   */
+  it("tire un identifiant différent à chaque partie", () => {
+    render(<Game operation="multiplication" />);
+
+    answerCurrent();
+    advance(ROUND_MS);
+
+    // Les boutons du résultat sont verrouillés un instant contre un tap
+    // accidenté ; on laisse passer le verrou avant de relancer.
+    advance(1000);
+    fireEvent.click(screen.getByText("Rejouer"));
+
+    answerCurrent();
+    advance(ROUND_MS);
+
+    expect(postedSession(1).clientUuid).not.toBe(postedSession(0).clientUuid);
   });
 });
 

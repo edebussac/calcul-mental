@@ -45,6 +45,30 @@ describe("parseSaveSessionInput", () => {
     expect(parsed?.answers[0].maxIdleMs).toBe(900);
   });
 
+  it("conserve platform et clientUuid", () => {
+    const parsed = parseSaveSessionInput({
+      ...validBody,
+      platform: "ios",
+      clientUuid: "3f0c1a6e-8b2d-4c5f-9a71-2e4d6b8c0a13",
+    });
+    expect(parsed?.platform).toBe("ios");
+    expect(parsed?.clientUuid).toBe("3f0c1a6e-8b2d-4c5f-9a71-2e4d6b8c0a13");
+  });
+
+  it("suppose le web quand le client ne déclare pas de plateforme", () => {
+    // Même compat que maxIdleMs : le web est le seul client déployé à ce jour.
+    const parsed = parseSaveSessionInput(validBody);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.platform).toBe("web");
+    expect(parsed?.clientUuid).toBeUndefined();
+  });
+
+  it("ignore une plateforme inconnue plutôt que de rejeter la partie", () => {
+    // Une partie jouée ne doit jamais être perdue pour un champ annexe.
+    const parsed = parseSaveSessionInput({ ...validBody, platform: "watchos" });
+    expect(parsed?.platform).toBe("web");
+  });
+
   it("applique level = 1 par défaut", () => {
     const { level: _level, ...noLevel } = validBody;
     void _level;

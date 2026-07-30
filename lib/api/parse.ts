@@ -3,9 +3,15 @@
  * Isolé ici pour être testable unitairement et réutilisable par les routes.
  */
 
-import type { SaveSessionInput } from "@/lib/services/sessions";
+import type { Platform, SaveSessionInput } from "@/lib/services/sessions";
 import type { AnswerRecord } from "@/lib/game/engine";
 import { isBaseOperation, isOperation } from "@/lib/game/operations";
+
+const PLATFORMS: readonly Platform[] = ["web", "ios", "android"];
+
+function isPlatform(v: unknown): v is Platform {
+  return typeof v === "string" && (PLATFORMS as readonly string[]).includes(v);
+}
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
@@ -69,12 +75,21 @@ export function parseSaveSessionInput(body: unknown): SaveSessionInput | null {
   const level = isFiniteNumber(b.level) ? b.level : 1;
   const mode = b.mode === "adaptive" ? "adaptive" : "classic";
 
+  // Compat, comme pour `maxIdleMs` : un client encore en cache (PWA) n'envoie
+  // ni `platform` ni `clientUuid`. Une session sans support déclaré vient du
+  // web — le seul client déployé à ce jour.
+  const platform = isPlatform(b.platform) ? b.platform : "web";
+  const clientUuid =
+    typeof b.clientUuid === "string" ? b.clientUuid : undefined;
+
   return {
     profileId: b.profileId,
     operation: b.operation,
     level,
     durationSeconds: b.durationSeconds,
     mode,
+    platform,
+    clientUuid,
     answers,
   };
 }

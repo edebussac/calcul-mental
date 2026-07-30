@@ -18,6 +18,11 @@ export const profiles = pgTable("profiles", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 50 }).notNull().unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  /**
+   * Identifiant tiré par le client, pour reconnaître un profil créé hors ligne
+   * sur un téléphone autrement que par son prénom. Cf. `sessions.clientUuid`.
+   */
+  clientUuid: varchar("client_uuid", { length: 36 }).unique(),
 });
 
 export const sessions = pgTable("sessions", {
@@ -38,6 +43,25 @@ export const sessions = pgTable("sessions", {
     .$type<"classic" | "adaptive">()
     .notNull()
     .default("classic"),
+  /**
+   * Support de saisie de la partie. Répondre au clavier d'un Mac et au pouce
+   * sur une dalle tactile ne donne pas les mêmes `response_ms` : sans cette
+   * colonne, un historique qui mêle les deux fausse les percentiles dont
+   * s'auto-calibre `playerRefs()` (cf. MIGRATION-MOBILE.md §4.2). Non
+   * renseignable après coup — d'où son ajout avant la migration native.
+   */
+  platform: varchar("platform", { length: 16 })
+    .$type<"web" | "ios" | "android">()
+    .notNull()
+    .default("web"),
+  /**
+   * Identifiant tiré par le client, une fois par partie. Deux téléphones en
+   * SQLite local produisent chacun une session `id = 1` : c'est lui, et non
+   * `id`, qui identifie une partie lors d'une synchro, ce qui la rend
+   * idempotente (un renvoi après échec réseau ne crée pas de doublon).
+   * Nullable : les parties déjà en base n'en ont pas.
+   */
+  clientUuid: varchar("client_uuid", { length: 36 }).unique(),
 });
 
 export const answers = pgTable("answers", {
