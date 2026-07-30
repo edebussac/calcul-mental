@@ -14,6 +14,8 @@ export default defineConfig({
   test: {
     name: "node",
     environment: "node",
-    include: ["tests/unit/**/*.test.ts"],
+    // Les tests d'intégration tournent aussi sous Node : ils adossent les mêmes
+    // services à un SQLite en mémoire (better-sqlite3), sans simulateur.
+    include: ["tests/unit/**/*.test.ts", "tests/integration/**/*.test.ts"],
   },
 });

@@ -36,8 +36,22 @@ npm run typecheck
 | --- | --- |
 | `src/lib/game/` | Le cerveau du jeu. TypeScript pur, aucune API de plateforme. Partagé avec le banc d'essai web. |
 | `src/lib/export/` | Export CSV. Pur également. |
+| `src/lib/db/` | Schéma SQLite, ouverture de la base, migrations inlinées. |
+| `src/lib/services/` | Lecture/écriture métier. Reprises du banc d'essai. |
 | `src/app/` | Les écrans (expo-router, routage par fichiers). |
 | `tests/unit/` | Tests du cerveau, repris tels quels du banc d'essai. |
+| `tests/integration/` | Services adossés à un SQLite en mémoire. |
+
+## Base de données
+
+Locale, sur l'appareil (`expo-sqlite`) : **aucun réseau**, l'app marche en avion.
+Après toute modification de `src/lib/db/schema.ts` :
+
+```bash
+npm run db:generate
+```
+
+Jamais `drizzle-kit generate` seul — voir [`AGENTS.md`](AGENTS.md).
 
 `@/*` résout vers `./src/*`, donc `@/lib/game/...` s'écrit exactement comme à la
 racine du dépôt.

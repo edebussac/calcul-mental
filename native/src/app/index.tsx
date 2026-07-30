@@ -1,63 +1,137 @@
 /**
- * Écran de fumée de l'étape 1 — provisoire, remplacé à l'étape 3.
+ * Écran de fumée de l'étape 2 — provisoire, remplacé à l'étape 3.
  *
- * Il n'a qu'un seul rôle : faire exécuter `lib/game/` par Hermes. Les tests
- * unitaires tournent sous Node ; les voir verts ne prouve donc pas que le code
- * s'exécute sur le moteur JS du téléphone. Cet écran le prouve.
+ * Il fait exercer par Hermes ce que les tests ne peuvent pas atteindre : le
+ * chemin réel `expo-sqlite` (les tests, eux, adossent les mêmes services à
+ * better-sqlite3 sous Node). Une partie est écrite puis relue, migrations
+ * comprises. Si cet écran affiche des compteurs qui montent, la persistance
+ * locale tient sur l'appareil.
  */
 
-import { useCallback, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { formatQuestion, generateQuestion } from "@/lib/game/generator";
-import { OPERATION_CONFIG, OPERATION_MENU_ORDER } from "@/lib/game/operations";
+import { getDb } from "@/lib/db/client";
+import { generateQuestion } from "@/lib/game/generator";
+import { getOrCreateProfile } from "@/lib/services/profiles";
+import {
+  bestScoreFor,
+  recentSessions,
+  saveSession,
+  type Platform as SessionPlatform,
+} from "@/lib/services/sessions";
+import type { AnswerRecord } from "@/lib/game/engine";
 
-interface Line {
-  label: string;
-  question: string;
-  answer: number;
+/** `platform` est requis par saveSession — pas de défaut silencieux. */
+const CURRENT_PLATFORM: SessionPlatform =
+  Platform.OS === "android" ? "android" : Platform.OS === "ios" ? "ios" : "web";
+
+interface Snapshot {
+  profile: string;
+  plays: number;
+  bestScore: number;
+  lastAnswers: number;
+  error?: string;
 }
 
-function drawAll(): Line[] {
-  return OPERATION_MENU_ORDER.map((operation) => {
-    const question = generateQuestion(operation);
-    // `all` se résout en une opération de base : on affiche le symbole de
-    // l'opération réellement tirée, pas le « ? » du menu.
-    const symbol = OPERATION_CONFIG[question.operation].symbol;
+/** Joue une fausse partie de 3 questions, dont 2 justes. */
+function fakeRound(): AnswerRecord[] {
+  return [0, 1, 2].map((i) => {
+    const q = generateQuestion("multiplication");
+    const given = i === 2 ? q.answer + 1 : q.answer; // la 3e est fausse
     return {
-      label: OPERATION_CONFIG[operation].label,
-      question: formatQuestion(question, symbol),
-      answer: question.answer,
+      a: q.a,
+      b: q.b,
+      operation: "multiplication" as const,
+      expected: q.answer,
+      given,
+      isCorrect: given === q.answer,
+      responseMs: 1200 + i * 100,
+      maxIdleMs: 0,
     };
   });
 }
 
 export default function SmokeScreen() {
-  const [lines, setLines] = useState<Line[]>(drawAll);
+  const [snap, setSnap] = useState<Snapshot | null>(null);
 
-  const redraw = useCallback(() => setLines(drawAll()), []);
+  const read = useCallback(async () => {
+    try {
+      const db = getDb();
+      const profile = await getOrCreateProfile(db, "Testeur");
+      const sessions = await recentSessions(db, profile.id, 50);
+      const best = await bestScoreFor(db, profile.id, "multiplication");
+      setSnap({
+        profile: profile.name,
+        plays: sessions.length,
+        bestScore: best,
+        lastAnswers: sessions[0]?.totalQuestions ?? 0,
+      });
+    } catch (e) {
+      setSnap({
+        profile: "—",
+        plays: 0,
+        bestScore: 0,
+        lastAnswers: 0,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }, []);
+
+  const play = useCallback(async () => {
+    const db = getDb();
+    const profile = await getOrCreateProfile(db, "Testeur");
+    await saveSession(db, {
+      profileId: profile.id,
+      operation: "multiplication",
+      durationSeconds: 60,
+      platform: CURRENT_PLATFORM,
+      answers: fakeRound(),
+    });
+    await read();
+  }, [read]);
+
+  useEffect(() => {
+    void read();
+  }, [read]);
 
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.body}>
-        <Text style={styles.title}>Cerveau de jeu</Text>
-        <Text style={styles.subtitle}>lib/game/ exécuté par Hermes</Text>
+        <Text style={styles.title}>Persistance locale</Text>
+        <Text style={styles.subtitle}>
+          expo-sqlite · plateforme « {CURRENT_PLATFORM} »
+        </Text>
 
-        {lines.map((line) => (
-          <View key={line.label} style={styles.row}>
-            <Text style={styles.label}>{line.label}</Text>
-            <Text style={styles.question}>
-              {line.question} = {line.answer}
-            </Text>
-          </View>
-        ))}
+        {snap?.error ? (
+          <Text style={styles.error}>{snap.error}</Text>
+        ) : (
+          <>
+            <Row label="Profil" value={snap?.profile ?? "…"} />
+            <Row label="Parties enregistrées" value={String(snap?.plays ?? 0)} />
+            <Row label="Meilleur score" value={String(snap?.bestScore ?? 0)} />
+            <Row
+              label="Questions (dernière)"
+              value={String(snap?.lastAnswers ?? 0)}
+            />
+          </>
+        )}
 
-        <Pressable style={styles.button} onPress={redraw}>
-          <Text style={styles.buttonText}>Retirer au sort</Text>
+        <Pressable style={styles.button} onPress={play}>
+          <Text style={styles.buttonText}>Enregistrer une partie</Text>
         </Pressable>
       </View>
     </SafeAreaView>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.row}>
+      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.value}>{value}</Text>
+    </View>
   );
 }
 
@@ -75,7 +149,8 @@ const styles = StyleSheet.create({
     borderBottomColor: "#333",
   },
   label: { color: "#888", fontSize: 16 },
-  question: { color: "#fff", fontSize: 20, fontVariant: ["tabular-nums"] },
+  value: { color: "#fff", fontSize: 20, fontVariant: ["tabular-nums"] },
+  error: { color: "#ff6b6b", fontSize: 14 },
   button: {
     marginTop: 24,
     backgroundColor: "#2b7fff",

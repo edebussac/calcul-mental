@@ -23,6 +23,41 @@ projet**. La version Next.js à la racine du dépôt est un banc d'essai jetable
 - `@/*` résout vers `./src/*` (`tsconfig.json` et `vitest.config.ts` sont
   alignés), donc `@/lib/game/...` s'écrit exactement comme à la racine.
 
+## Base de données
+
+SQLite **local** (`expo-sqlite` + Drizzle). Aucun réseau : l'app fonctionne en
+avion. Le schéma vit dans `src/lib/db/schema.ts` ; les services de
+`src/lib/services/` sont ceux du banc d'essai web, à une exception près
+(`saveSession`, cf. son commentaire).
+
+Après toute modification du schéma :
+
+```bash
+npm run db:generate
+```
+
+Cette commande enchaîne `drizzle-kit generate` **et**
+`scripts/build-migrations.mjs`. Ne jamais lancer `drizzle-kit generate` seul :
+`src/lib/db/migrations.ts` resterait périmé et l'app appliquerait l'ancien
+schéma.
+
+> ⚠️ **Ne pas réintroduire l'import des `.sql` dans le bundle.** Le
+> `drizzle/migrations.js` que drizzle-kit produit avec `driver: "expo"` fait
+> `import m0000 from './0000_….sql'`, ce que Metro ne sait pas charger. Le
+> déclarer dans `resolver.sourceExts` **ne règle rien** : Metro le résout alors,
+> mais tente de le parser comme du JavaScript et échoue sur « Missing semicolon »
+> dès `CREATE TABLE`. D'où l'inlining dans un `.ts`, et l'absence volontaire de
+> `metro.config.js`.
+
+Deux pièges de SQLite déjà rencontrés, à ne pas réintroduire :
+
+- **`lower()` est ASCII.** Il laisse « É » intact, donc comparer des prénoms en
+  SQL dupliquait les profils accentués saisis en majuscules. `getProfileByName`
+  compare désormais en JavaScript (`toLocaleLowerCase`).
+- **Les clés étrangères ne sont pas appliquées par défaut.** Le harnais de test
+  pose `PRAGMA foreign_keys = ON` ; toute autre ouverture de base doit le faire
+  aussi.
+
 ## L'exigence durable du pavé numérique
 
 Reprise du §7 de [`../MIGRATION-MOBILE.md`](../MIGRATION-MOBILE.md) :
