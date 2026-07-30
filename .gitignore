@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# …sauf le gabarit, sans quoi le `cp .env.example .env.local` du README ne peut
+# pas fonctionner sur un clone neuf. Ne JAMAIS y mettre de vraie valeur.
+!.env.example
 
 # vercel
 .vercel
