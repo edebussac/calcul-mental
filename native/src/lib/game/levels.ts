@@ -41,6 +41,23 @@ export const LEVEL_CONFIG: Record<Level, LevelConfig> = {
 
 export const DEFAULT_LEVEL: Level = 1;
 
+/**
+ * Le mode ciblé ne travaille que la table de `Facile`.
+ *
+ * Ce n'est pas qu'un choix d'interface : ses questions viennent de
+ * l'historique du joueur, pas d'une plage. Sans filtre, une partie
+ * `Légendaire` déjà jouée injecterait des faits comme 47 × 83 dans le vivier,
+ * dont la réponse à 4 chiffres dépasserait la saisie bornée à 3 par le niveau
+ * — une question tout simplement impossible à valider.
+ */
+export const ADAPTIVE_LEVEL: Level = 1;
+
+/** Un fait est-il dans la table travaillée par le mode ciblé ? */
+export function isAdaptiveFact(a: number, b: number): boolean {
+  const { min, max } = levelRange(ADAPTIVE_LEVEL);
+  return a >= min && a <= max && b >= min && b <= max;
+}
+
 export function isLevel(value: unknown): value is Level {
   return (LEVELS as readonly unknown[]).includes(Number(value));
 }

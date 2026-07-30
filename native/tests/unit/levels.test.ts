@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
+  ADAPTIVE_LEVEL,
   DEFAULT_LEVEL,
   LEVELS,
   LEVEL_CONFIG,
+  isAdaptiveFact,
   isLevel,
   levelRange,
   maxAnswer,
@@ -109,6 +111,35 @@ describe("cohérence avec le générateur", () => {
           expect(Number.isInteger(q.answer)).toBe(true);
           expect(q.answer).toBeGreaterThanOrEqual(0);
         }
+      }
+    }
+  });
+});
+
+describe("table du mode ciblé", () => {
+  it("s'arrête à 10 × 10", () => {
+    expect(isAdaptiveFact(10, 10)).toBe(true);
+    expect(isAdaptiveFact(1, 1)).toBe(true);
+    expect(isAdaptiveFact(11, 2)).toBe(false);
+    expect(isAdaptiveFact(2, 11)).toBe(false);
+  });
+
+  it("écarte les faits venus d'une partie de niveau supérieur", () => {
+    // Régression : 47 × 83 = 3901, soit 4 chiffres, alors que le mode ciblé
+    // borne la saisie à 3 (niveau Facile). La question serait invalidable.
+    expect(isAdaptiveFact(47, 83)).toBe(false);
+    const reponse = 47 * 83;
+    expect(String(reponse).length).toBeGreaterThan(
+      maxAnswerDigits("multiplication", ADAPTIVE_LEVEL),
+    );
+  });
+
+  it("ne retient que des faits saisissables au niveau du mode ciblé", () => {
+    const limite = maxAnswerDigits("multiplication", ADAPTIVE_LEVEL);
+    for (let a = 1; a <= 120; a++) {
+      for (let b = 1; b <= 120; b++) {
+        if (!isAdaptiveFact(a, b)) continue;
+        expect(String(a * b).length).toBeLessThanOrEqual(limite);
       }
     }
   });

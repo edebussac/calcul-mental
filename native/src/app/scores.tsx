@@ -1,17 +1,17 @@
 /**
  * Écran des scores, porté de `app/scores/page.tsx` du banc d'essai web.
  *
- * Mêmes quatre sections, mêmes données. Deux différences de plateforme :
+ * Mêmes sections, mêmes données — à une exception près : **pas d'export**. Le
+ * banc d'essai proposait un téléchargement JSON/CSV ; l'app n'en propose pas,
+ * et les modules correspondants ont été retirés plutôt que laissés en sommeil.
  *
- * - les trois `fetch` deviennent des lectures SQLite locales — l'écran
- *   s'affiche donc en avion ;
- * - l'export, qui passait par deux liens `<a download>`, ouvre la feuille de
- *   partage (cf. `lib/exportFile.ts`).
+ * Les trois `fetch` deviennent des lectures SQLite locales : l'écran s'affiche
+ * donc en avion.
  */
 
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -19,10 +19,7 @@ import { getDb } from "@/lib/db/client";
 import type { Session } from "@/lib/db/schema";
 import { analyzeFacts, type FactAnalysis } from "@/lib/game/adaptive";
 import { OPERATION_CONFIG } from "@/lib/game/operations";
-import { shareExport } from "@/lib/exportFile";
-import { toAnswersCsv } from "@/lib/export/csv";
 import { useProfile } from "@/lib/profile";
-import { exportAnswerRows, exportJson } from "@/lib/services/export";
 import { multiplicationFactStats } from "@/lib/services/factStats";
 import { bestScores, recentSessions, type BestScore } from "@/lib/services/sessions";
 import { colors, radius, shadow, spacing } from "@/theme";
@@ -52,8 +49,6 @@ export default function ScoresScreen() {
   const [scores, setScores] = useState<BestScore[] | null>(null);
   const [history, setHistory] = useState<Session[] | null>(null);
   const [weakFacts, setWeakFacts] = useState<FactAnalysis[] | null>(null);
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready || !profile) return;
@@ -76,37 +71,6 @@ export default function ScoresScreen() {
       alive = false;
     };
   }, [ready, profile]);
-
-  const runExport = useCallback(
-    async (format: "json" | "csv") => {
-      if (!profile || exporting) return;
-      setExporting(true);
-      setExportError(null);
-      try {
-        const db = getDb();
-        if (format === "json") {
-          const data = await exportJson(db, profile.id);
-          await shareExport(
-            `blitzmatic-${profile.name}.json`,
-            JSON.stringify(data, null, 2),
-            "application/json",
-          );
-        } else {
-          const rows = await exportAnswerRows(db, profile.id);
-          await shareExport(
-            `blitzmatic-${profile.name}.csv`,
-            toAnswersCsv(rows),
-            "text/csv",
-          );
-        }
-      } catch (e) {
-        setExportError(e instanceof Error ? e.message : "Export impossible");
-      } finally {
-        setExporting(false);
-      }
-    },
-    [profile, exporting],
-  );
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
@@ -231,29 +195,6 @@ export default function ScoresScreen() {
               )}
             </Section>
 
-            <Section title="Exporter mes données">
-              <View style={styles.exportRow}>
-                <Pressable
-                  style={[styles.exportButton, exporting && styles.buttonBusy]}
-                  disabled={exporting}
-                  onPress={() => void runExport("json")}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.exportLabel}>JSON</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.exportButton, exporting && styles.buttonBusy]}
-                  disabled={exporting}
-                  onPress={() => void runExport("csv")}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.exportLabel}>CSV</Text>
-                </Pressable>
-              </View>
-              {exportError ? (
-                <Text style={styles.error}>{exportError}</Text>
-              ) : null}
-            </Section>
           </>
         ) : null}
       </ScrollView>
@@ -301,7 +242,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   muted: { fontSize: 14, color: colors.textSecondary },
-  error: { fontSize: 13, color: colors.red },
 
   cards: { gap: spacing.md },
   recordCard: {
@@ -368,16 +308,4 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   barFill: { height: "100%", borderRadius: radius.pill, backgroundColor: colors.green },
-
-  exportRow: { flexDirection: "row", gap: spacing.md },
-  exportButton: {
-    flex: 1,
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.lg,
-    paddingVertical: spacing.lg,
-    alignItems: "center",
-    ...shadow.card,
-  },
-  exportLabel: { fontSize: 16, fontWeight: "600", color: colors.textPrimary },
-  buttonBusy: { opacity: 0.5 },
 });

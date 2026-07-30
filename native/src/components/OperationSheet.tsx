@@ -1,9 +1,13 @@
 /**
  * Feuille de configuration d'un entraînement, ouverte au tap sur une opération.
  *
+ * L'ordre des blocs suit leur dépendance : le **mode d'entraînement** vient en
+ * premier parce qu'il commande le niveau. Choisir « Ciblé » impose `Facile` et
+ * grise les autres — ses questions viennent de l'historique de multiplication,
+ * qui ne travaille que la table jusqu'à 10 × 10 (cf. `lib/game/levels.ts`).
+ *
  * Les blocs non développés sont **affichés et grisés**, jamais masqués : la
- * maquette les anticipe volontairement. Ce qui est marqué « à venir » l'est
- * d'après l'état réel du code — voir les commentaires de chaque bloc.
+ * maquette les anticipe volontairement.
  */
 
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -12,6 +16,7 @@ import { useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
+  ADAPTIVE_LEVEL,
   DEFAULT_LEVEL,
   LEVELS,
   LEVEL_CONFIG,
@@ -47,11 +52,25 @@ interface Props {
 }
 
 export function OperationSheet({ operation, onClose, onStart }: Props) {
+  const [mode, setMode] = useState<SessionMode>("classic");
   const [level, setLevel] = useState<Level>(DEFAULT_LEVEL);
 
-  // Le ciblage adaptatif n'existe que pour la multiplication : il s'appuie sur
-  // `multiplicationFactStats`, qui n'a pas d'équivalent pour les autres.
+  // Le ciblage adaptatif s'appuie sur `multiplicationFactStats`, qui n'a pas
+  // d'équivalent pour les autres opérations.
   const targetedAvailable = operation === "multiplication";
+  // La feuille garde son état d'une ouverture à l'autre : si « Ciblé » était
+  // choisi puis qu'on ouvre une opération qui ne le propose pas, on retombe
+  // sur « Normal » plutôt que de démarrer dans un mode invisible à l'écran.
+  const effectiveMode: SessionMode = targetedAvailable ? mode : "classic";
+  const targeted = effectiveMode === "adaptive";
+  const effectiveLevel: Level = targeted ? ADAPTIVE_LEVEL : level;
+
+  const chooseTargeted = () => {
+    setMode("adaptive");
+    // Le niveau suit immédiatement : l'utilisateur doit voir la conséquence de
+    // son choix, pas la découvrir en lançant la partie.
+    setLevel(ADAPTIVE_LEVEL);
+  };
 
   return (
     <Modal
@@ -80,14 +99,44 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
           <View style={styles.headerSpacer} />
         </View>
 
-        {/* ① Niveau — une plage d'opérandes, rien d'autre. La plage est
-            affichée : « Difficile » seul ne dit pas ce qu'on choisit. */}
-        <SectionLabel index="1" label="Niveau" />
+        {/* ① Mode d'entraînement — en premier : il commande le niveau. */}
+        <SectionLabel index="1" label="Mode d'entraînement" />
+        <View style={styles.row}>
+          <OptionCard
+            icon="target"
+            label="Normal"
+            tint={colors.green}
+            selected={!targeted}
+            onPress={() => setMode("classic")}
+          />
+          <OptionCard
+            icon="target-variant"
+            label="Ciblé (points faibles)"
+            tint={colors.blue}
+            selected={targeted}
+            disabled={!targetedAvailable}
+            note={
+              targetedAvailable
+                ? "table jusqu’à 10 × 10"
+                : "multiplication seulement"
+            }
+            onPress={targetedAvailable ? chooseTargeted : undefined}
+          />
+        </View>
+
+        {/* ② Niveau — une plage d'opérandes, affichée pour que le choix soit
+            lisible. Verrouillé sur Facile en mode ciblé. */}
+        <SectionLabel
+          index="2"
+          label="Niveau"
+          hint={targeted ? "imposé par le mode ciblé" : undefined}
+        />
         <View style={styles.row}>
           {LEVELS.map((id) => {
             const config = LEVEL_CONFIG[id];
             const style = LEVEL_STYLE[id];
-            const selected = id === level;
+            const selected = id === effectiveLevel;
+            const locked = targeted && id !== ADAPTIVE_LEVEL;
             return (
               <Pressable
                 key={id}
@@ -98,20 +147,27 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
                     borderColor: style.tint,
                     backgroundColor: style.soft,
                   },
+                  locked && styles.cardDisabled,
                 ]}
-                onPress={() => setLevel(id)}
+                onPress={locked ? undefined : () => setLevel(id)}
+                disabled={locked}
                 accessibilityRole="button"
-                accessibilityState={{ selected }}
+                accessibilityState={{ selected, disabled: locked }}
               >
                 <MaterialCommunityIcons
                   name={style.icon}
                   size={26}
-                  color={style.tint}
+                  color={locked ? colors.textDisabled : style.tint}
                 />
-                <Text style={styles.cardLabel} numberOfLines={1}>
+                <Text
+                  style={[styles.cardLabel, locked && styles.cardLabelDisabled]}
+                  numberOfLines={1}
+                >
                   {config.label}
                 </Text>
-                <Text style={styles.cardRange}>
+                <Text
+                  style={[styles.cardRange, locked && styles.cardLabelDisabled]}
+                >
                   {config.min}–{config.max}
                 </Text>
               </Pressable>
@@ -119,8 +175,8 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
           })}
         </View>
 
-        {/* ② Mode de réponse — la saisie au pavé existe ; le vocal, non. */}
-        <SectionLabel index="2" label="Mode de réponse" />
+        {/* ③ Mode de réponse — la saisie au pavé existe ; le vocal, non. */}
+        <SectionLabel index="3" label="Mode de réponse" />
         <View style={styles.row}>
           <OptionCard
             icon="keyboard-outline"
@@ -136,36 +192,11 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
           />
         </View>
 
-        {/* ③ Mode d'entraînement — le ciblage adaptatif est développé, mais
-            seulement pour la multiplication. Il ignore le niveau : ses
-            questions viennent de l'historique, pas d'une plage. */}
-        <SectionLabel index="3" label="Mode d'entraînement" />
-        <View style={styles.row}>
-          <OptionCard
-            icon="target"
-            label="Normal"
-            tint={colors.green}
-            selected
-          />
-          <OptionCard
-            icon="target-variant"
-            label="Ciblé (points faibles)"
-            tint={colors.blue}
-            disabled={!targetedAvailable}
-            note={
-              targetedAvailable ? "ignore le niveau" : "multiplication seulement"
-            }
-            onPress={
-              targetedAvailable && operation
-                ? () => onStart(operation, "adaptive", level)
-                : undefined
-            }
-          />
-        </View>
-
         <Pressable
           style={styles.cta}
-          onPress={() => operation && onStart(operation, "classic", level)}
+          onPress={() =>
+            operation && onStart(operation, effectiveMode, effectiveLevel)
+          }
           accessibilityRole="button"
         >
           <Ionicons name="play" size={18} color={colors.white} />
@@ -186,11 +217,11 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
 function SectionLabel({
   index,
   label,
-  comingSoon,
+  hint,
 }: {
   index: string;
   label: string;
-  comingSoon?: boolean;
+  hint?: string;
 }) {
   return (
     <View style={styles.sectionRow}>
@@ -198,7 +229,7 @@ function SectionLabel({
         <Text style={styles.sectionBadgeText}>{index}</Text>
       </View>
       <Text style={styles.sectionLabel}>{label.toUpperCase()}</Text>
-      {comingSoon ? <Text style={styles.comingSoonTag}>à venir</Text> : null}
+      {hint ? <Text style={styles.sectionHint}>{hint}</Text> : null}
     </View>
   );
 }
@@ -228,12 +259,13 @@ function OptionCard({
       style={[
         styles.card,
         styles.optionCard,
-        selected && styles.cardSelected,
+        selected && !inactive && styles.cardSelected,
         inactive && styles.cardDisabled,
       ]}
       onPress={inactive ? undefined : onPress}
       disabled={inactive || !onPress}
       accessibilityRole="button"
+      accessibilityState={{ selected, disabled: inactive }}
     >
       <View style={styles.optionInner}>
         <MaterialCommunityIcons
@@ -242,13 +274,17 @@ function OptionCard({
           color={inactive ? colors.textDisabled : tint}
         />
         <Text
-          style={[styles.cardLabel, inactive && styles.cardLabelDisabled]}
-          numberOfLines={1}
+          style={[
+            styles.cardLabel,
+            styles.optionLabel,
+            inactive && styles.cardLabelDisabled,
+          ]}
+          numberOfLines={2}
         >
           {label}
         </Text>
       </View>
-      {selected ? (
+      {selected && !inactive ? (
         <View style={styles.check}>
           <Ionicons name="checkmark" size={13} color={colors.white} />
         </View>
@@ -309,11 +345,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.7,
     color: colors.textMuted,
   },
-  comingSoonTag: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.textDisabled,
-  },
+  sectionHint: { fontSize: 11, fontWeight: "600", color: colors.textDisabled },
 
   row: { flexDirection: "row", gap: spacing.sm },
   card: {
@@ -326,12 +358,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   levelCard: { paddingVertical: spacing.md, gap: 2 },
-  optionCard: { paddingVertical: spacing.lg, paddingHorizontal: spacing.sm },
+  // `paddingRight` réserve la place de la coche : sans elle, un libellé long
+  // (« Ciblé (points faibles) ») passe dessous.
+  optionCard: {
+    paddingVertical: spacing.lg,
+    paddingLeft: spacing.sm,
+    paddingRight: spacing.xxl,
+  },
   optionInner: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
   },
+  optionLabel: { flexShrink: 1 },
   cardSelected: { borderColor: colors.green, backgroundColor: colors.greenSoft },
   cardDisabled: { backgroundColor: colors.surface, borderColor: colors.border },
   cardLabel: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
@@ -344,6 +383,7 @@ const styles = StyleSheet.create({
   },
   check: {
     position: "absolute",
+    top: spacing.sm,
     right: spacing.sm,
     width: 20,
     height: 20,

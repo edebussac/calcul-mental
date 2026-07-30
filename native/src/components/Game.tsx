@@ -53,7 +53,9 @@ import {
   type Question,
 } from "@/lib/game/generator";
 import {
+  ADAPTIVE_LEVEL,
   DEFAULT_LEVEL,
+  isAdaptiveFact,
   levelRange,
   maxAnswerDigits,
   type Level,
@@ -118,18 +120,22 @@ export function Game({
 }: {
   operation: Operation;
   adaptive?: boolean;
-  /**
-   * Plage d'opérandes. **Sans effet en mode adaptatif** : les questions y sont
-   * tirées de l'historique du joueur, pas d'une plage (cf. `nextQuestion`).
-   */
+  /** Plage d'opérandes. Ignoré en mode ciblé, qui impose `ADAPTIVE_LEVEL`. */
   level?: Level;
 }) {
   const router = useRouter();
   const { profile, ready } = useProfile();
   const config = OPERATION_CONFIG[operation];
+
+  // Le mode ciblé impose son niveau, ici et pas seulement dans la feuille de
+  // configuration : le niveau arrive par l'URL, qui n'est pas sous le contrôle
+  // de l'app. Sans ce garde, `?mode=adaptive&level=4` bornerait la saisie à
+  // 5 chiffres pour des faits qui n'en demandent que 3.
+  const effectiveLevel = adaptive ? ADAPTIVE_LEVEL : level;
+
   // Dérivé du niveau : à Légendaire une multiplication atteint 10 000, que la
   // borne figée à 3 chiffres du banc d'essai rendrait impossible à saisir.
-  const maxDigits = maxAnswerDigits(operation, level);
+  const maxDigits = maxAnswerDigits(operation, effectiveLevel);
 
   const [session, setSession] = useState<SessionState>(initialSession);
   const [question, setQuestion] = useState<Question | null>(null);
@@ -170,8 +176,13 @@ export function Game({
     if (!adaptive || !ready || !profile) return;
     let cancelled = false;
     void multiplicationFactStats(getDb(), profile.id)
-      .then((stats) => {
+      .then((all) => {
         if (cancelled) return;
+        // L'historique contient les faits de TOUS les niveaux déjà joués. Le
+        // mode ciblé ne travaille que la table de Facile : sans ce filtre, un
+        // 47 × 83 hérité d'une partie Légendaire donnerait une réponse à
+        // 4 chiffres, impossible à saisir ici (cf. `isAdaptiveFact`).
+        const stats = all.filter((s) => isAdaptiveFact(s.a, s.b));
         statsRef.current = new Map(stats.map((s) => [factKey(s.a, s.b), s]));
         poolRef.current = buildFactPool(stats);
       })
@@ -187,7 +198,11 @@ export function Game({
   // partie (le pool ne dépend plus seulement de l'historique figé au départ).
   const applyAdaptiveAttempt = useCallback(
     (a: number, b: number, responseMs: number, maxIdleMs: number) => {
-      if (!adaptive || !isEngagedAttempt(maxIdleMs)) return;
+      // Même filtre que le chargement initial : une réponse hors table ne doit
+      // pas se faufiler dans le vivier par la mise à jour à chaud.
+      if (!adaptive || !isAdaptiveFact(a, b) || !isEngagedAttempt(maxIdleMs)) {
+        return;
+      }
       const key = factKey(a, b);
       const [lo, hi] = a <= b ? [a, b] : [b, a];
       const prev = statsRef.current.get(key);
@@ -212,7 +227,7 @@ export function Game({
           factToQuestion(
             pickFact(weighted, Math.random, recentlyAskedRef.current),
           )
-      : () => generateQuestion(operation, levelRange(level));
+      : () => generateQuestion(operation, levelRange(effectiveLevel));
 
     // `questionRef` porte encore la question sortante : c'est sa réponse qu'on
     // s'interdit de reproposer (elle reste affichée en écho).
@@ -229,7 +244,7 @@ export function Game({
     const now = Date.now();
     questionStart.current = now;
     activityRef.current = startActivity(now);
-  }, [operation, adaptive, level]);
+  }, [operation, adaptive, effectiveLevel]);
 
   // Retour à l'accueil si aucun profil sélectionné.
   useEffect(() => {
@@ -346,7 +361,7 @@ export function Game({
     void saveSession(getDb(), {
       profileId: profile.id,
       operation,
-      level,
+      level: effectiveLevel,
       durationSeconds: DURATION_SECONDS - timeLeft,
       mode: adaptive ? "adaptive" : "classic",
       platform: PLATFORM,
@@ -357,7 +372,7 @@ export function Game({
     })
       .then(() => setSaveState("done"))
       .catch(() => setSaveState("error"));
-  }, [phase, profile, operation, timeLeft, adaptive, level]);
+  }, [phase, profile, operation, timeLeft, adaptive, effectiveLevel]);
 
   const restart = useCallback(() => {
     savedRef.current = false;
