@@ -45,7 +45,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.screenTitle}>Tests</Text>
+          <Text style={styles.screenTitle}>Blitzmatic</Text>
           <Pressable
             style={styles.profileChip}
             onPress={() => setProfileOpen(true)}
@@ -133,7 +133,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: spacing.sm,
   },
-  screenTitle: { fontSize: 40, fontWeight: "800", color: colors.textPrimary },
+  // 32 et non 40 : « Blitzmatic » est bien plus long que l'ancien titre et
+  // viendrait toucher la pastille de profil sur les petits écrans.
+  screenTitle: { fontSize: 32, fontWeight: "800", color: colors.textPrimary },
   profileChip: {
     flexDirection: "row",
     alignItems: "center",

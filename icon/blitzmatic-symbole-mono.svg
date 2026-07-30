@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Blitzmatic — symbole monochrome</title>
+  <defs>
+    <g id="times">
+      <g transform="rotate(45)">
+        <rect x="-12" y="-3.5" width="24" height="7" rx="3.5"/>
+        <rect x="-3.5" y="-12" width="7" height="24" rx="3.5"/>
+      </g>
+    </g>
+    <g id="divide">
+      <rect x="-12" y="-3.5" width="24" height="7" rx="3.5"/>
+      <circle cx="0" cy="-11.5" r="3.8"/>
+      <circle cx="0" cy="11.5" r="3.8"/>
+    </g>
+  </defs>
+
+  <g transform="translate(-53,-32.3) scale(3.067)" fill="#101425">
+    <g transform="translate(-2,-6)">
+      <path d="M118 25 L62 105 H96 L84 175 L142 92 H106 Z"/>
+    </g>
+    <use href="#times"  transform="translate(48,46) scale(1.5)"/>
+    <use href="#divide" transform="translate(152,146) scale(1.5)"/>
+  </g>
+</svg>

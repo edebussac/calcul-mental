@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Blitzmatic — icône iOS (pleine page, bords carrés)</title>
+  <defs>
+    <linearGradient id="grn" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#4FDA90"/>
+      <stop offset="1" stop-color="#31BA76"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.17"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <g id="times">
+      <g transform="rotate(45)">
+        <rect x="-12" y="-3.5" width="24" height="7" rx="3.5"/>
+        <rect x="-3.5" y="-12" width="7" height="24" rx="3.5"/>
+      </g>
+    </g>
+    <g id="divide">
+      <rect x="-12" y="-3.5" width="24" height="7" rx="3.5"/>
+      <circle cx="0" cy="-11.5" r="3.8"/>
+      <circle cx="0" cy="11.5" r="3.8"/>
+    </g>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#25A066"/>
+  <rect width="1024" height="962" fill="url(#grn)"/>
+  <rect width="1024" height="962" fill="url(#gloss)"/>
+
+  <g fill="#FFFFFF">
+    <g transform="translate(-10.24,-30.72) scale(5.12)">
+      <path d="M118 25 L62 105 H96 L84 175 L142 92 H106 Z"/>
+    </g>
+    <use href="#times"  transform="translate(245.76,235.52) scale(7.68)"/>
+    <use href="#divide" transform="translate(778.24,747.52) scale(7.68)"/>
+  </g>
+</svg>

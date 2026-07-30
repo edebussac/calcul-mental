@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 240" width="760" height="240"
+     font-family="Inter, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <title>Blitzmatic — verrou horizontal</title>
+  <defs>
+    <linearGradient id="grn" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#4FDA90"/>
+      <stop offset="1" stop-color="#31BA76"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.17"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <g id="times">
+      <g transform="rotate(45)">
+        <rect x="-12" y="-3.5" width="24" height="7" rx="3.5"/>
+        <rect x="-3.5" y="-12" width="7" height="24" rx="3.5"/>
+      </g>
+    </g>
+    <g id="divide">
+      <rect x="-12" y="-3.5" width="24" height="7" rx="3.5"/>
+      <circle cx="0" cy="-11.5" r="3.8"/>
+      <circle cx="0" cy="11.5" r="3.8"/>
+    </g>
+  </defs>
+
+  <g transform="translate(40,40) scale(0.8)">
+    <rect y="8" width="200" height="192" rx="46" fill="#25A066"/>
+    <rect width="200" height="188" rx="46" fill="url(#grn)"/>
+    <rect width="200" height="188" rx="46" fill="url(#gloss)"/>
+    <g fill="#FFFFFF">
+      <g transform="translate(-2,-6)">
+        <path d="M118 25 L62 105 H96 L84 175 L142 92 H106 Z"/>
+      </g>
+      <use href="#times"  transform="translate(48,46) scale(1.5)"/>
+      <use href="#divide" transform="translate(152,146) scale(1.5)"/>
+    </g>
+  </g>
+
+  <text x="232" y="139" font-size="62" font-weight="800" letter-spacing="0.5" fill="#101425">BLITZMATIC</text>
+  <text x="235" y="176" font-size="16" font-weight="600" letter-spacing="5.5" fill="#8A90A3">CALCUL MENTAL EN RAFALE</text>
+</svg>
