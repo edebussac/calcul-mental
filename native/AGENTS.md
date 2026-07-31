@@ -83,10 +83,42 @@ responder n'attribue le toucher qu'à une seule vue.
 > `locationX/Y` reste relatif au pavé, et chaque doigt est suivi par son
 > `identifier` — c'est ce qui donne le chevauchement ordonné.
 
+## Installer sur un iPhone réel
+
+Expo Go **ne convient plus** : il plafonne au SDK que sa version App Store
+supporte, et le projet est en SDK 57. Il faut un *build de dev*, qui s'installe
+comme une vraie app. `ios/` est régénéré par `npx expo prebuild`, d'où son
+absence du dépôt.
+
+> ⚠️ **Ne pas lancer `npx expo run:ios`.** Il passe
+> `COCOAPODS_PARALLEL_CODE_SIGN=true`, qui laisse des frameworks **non signés** —
+> huit lors du premier build, dont React et Hermes. L'installation échoue alors
+> sur `ApplicationVerificationFailed`, et le message ne cite qu'**un seul**
+> framework (`ExpoFileSystem` en l'occurrence), ce qui fait chercher du côté
+> d'une dépendance fautive au lieu de la signature.
+
+Build en signature série, depuis `ios/` :
+
+```bash
+xcodebuild -workspace Blitzmatic.xcworkspace -scheme Blitzmatic \
+  -configuration Debug -destination "id=<UDID>" \
+  -allowProvisioningUpdates COCOAPODS_PARALLEL_CODE_SIGN=NO
+```
+
+puis `xcrun devicectl device install app --device <id> <chemin>/Blitzmatic.app`,
+et `npx expo start --dev-client` pour servir le JS.
+
+Vérifier avant de conclure à un bug de code — trois obstacles rencontrés, tous
+hors du code : Ruby système trop ancien pour CocoaPods, **mode développeur**
+désactivé sur l'iPhone (l'option n'apparaît dans les Réglages qu'après qu'Xcode
+a ciblé l'appareil une fois), et la signature parallèle ci-dessus.
+
+Avec un Apple ID gratuit, le profil **expire au bout de 7 jours** : l'app cesse
+de s'ouvrir et doit être réinstallée.
+
 ## Commandes
 
-`npm test` (vitest, sans simulateur), `npm run typecheck`, `npm start` (Metro —
-puis ouvrir `exp://127.0.0.1:8081` dans Expo Go).
+`npm test` (vitest, sans simulateur), `npm run typecheck`, `npm start` (Metro).
 
 État de la migration et décisions :
 [`../MIGRATION-MOBILE.md`](../MIGRATION-MOBILE.md).
