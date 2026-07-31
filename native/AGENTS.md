@@ -108,10 +108,25 @@ xcodebuild -workspace Blitzmatic.xcworkspace -scheme Blitzmatic \
 puis `xcrun devicectl device install app --device <id> <chemin>/Blitzmatic.app`,
 et `npx expo start --dev-client` pour servir le JS.
 
-Vérifier avant de conclure à un bug de code — trois obstacles rencontrés, tous
+> ⚠️ **« No script URL provided » au lancement.** Conséquence du contournement
+> ci-dessus : installer via `devicectl` plutôt que `expo run:ios` saute l'étape
+> où ce dernier indique à l'app où trouver Metro. L'app ne tente alors même pas
+> de le contacter — aucune requête ne remonte dans les logs Metro, ce qui le
+> distingue d'un vrai problème réseau. Se répare **sur l'iPhone**, dans Safari
+> (pas dans l'app), en ouvrant :
+>
+> ```
+> blitzmatic://expo-development-client/?url=http%3A%2F%2F<IP-LAN-du-Mac>%3A8081
+> ```
+>
+> Safari propose d'ouvrir dans Blitzmatic ; accepter. Nécessite Metro déjà
+> lancé, et l'iPhone sur le même Wi-Fi que le Mac.
+
+Vérifier avant de conclure à un bug de code — obstacles déjà rencontrés, tous
 hors du code : Ruby système trop ancien pour CocoaPods, **mode développeur**
 désactivé sur l'iPhone (l'option n'apparaît dans les Réglages qu'après qu'Xcode
-a ciblé l'appareil une fois), et la signature parallèle ci-dessus.
+a ciblé l'appareil une fois), la signature parallèle, et l'URL de Metro
+ci-dessus.
 
 Avec un Apple ID gratuit, le profil **expire au bout de 7 jours** : l'app cesse
 de s'ouvrir et doit être réinstallée.
