@@ -23,6 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { Countdown } from "@/components/Countdown";
 import { Keypad } from "@/components/Keypad";
 import { getDb } from "@/lib/db/client";
 import {
@@ -73,6 +74,12 @@ import { colors, radius, shadow, spacing } from "@/theme";
 
 /** Durée d'un round (s). */
 const DURATION_SECONDS = 60;
+/**
+ * Décompte avant le départ. Il évite que la partie commence sous le doigt qui
+ * vient d'appuyer sur « Commencer » — et surtout que la première question soit
+ * chronométrée avant même d'être lisible.
+ */
+const COUNTDOWN_SECONDS = 3;
 /** Verrou anti-tap accidentel sur l'écran de résultat (dernier appui du round). */
 const RESULT_LOCK_MS = 500;
 /**
@@ -85,7 +92,7 @@ const ANSWER_ECHO_MS = 800;
 const PLATFORM: PlatformTag =
   Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web";
 
-type Phase = "playing" | "finished";
+type Phase = "countdown" | "playing" | "finished";
 type SaveState = "idle" | "saving" | "done" | "error";
 
 function formatTime(seconds: number): string {
@@ -141,7 +148,7 @@ export function Game({
   const [question, setQuestion] = useState<Question | null>(null);
   const [input, setInput] = useState("");
   const [timeLeft, setTimeLeft] = useState(DURATION_SECONDS);
-  const [phase, setPhase] = useState<Phase>("playing");
+  const [phase, setPhase] = useState<Phase>("countdown");
   const [echo, setEcho] = useState<number | null>(null);
   const echoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -251,7 +258,14 @@ export function Game({
     if (ready && !profile) router.replace("/");
   }, [ready, profile, router]);
 
-  useEffect(() => {
+  /**
+   * Fin du décompte. La première question est tirée **ici**, et pas au montage :
+   * `nextQuestion` pose `questionStart`, donc la tirer plus tôt ferait compter
+   * les secondes du décompte dans le temps de réponse — et fausserait le modèle
+   * adaptatif, qui se calibre justement sur ces temps.
+   */
+  const startPlaying = useCallback(() => {
+    setPhase("playing");
     nextQuestion();
   }, [nextQuestion]);
 
@@ -382,9 +396,10 @@ export function Game({
     setSession(initialSession);
     sessionRef.current = initialSession;
     setTimeLeft(DURATION_SECONDS);
-    setPhase("playing");
-    nextQuestion();
-  }, [nextQuestion]);
+    // Repasse par le décompte : « Rejouer » ne doit pas relancer une partie
+    // sous le doigt, pas plus que le premier lancement.
+    setPhase("countdown");
+  }, []);
 
   if (phase === "finished") {
     return (
@@ -415,6 +430,12 @@ export function Game({
         <View style={styles.headerSpacer} />
       </View>
 
+      {phase === "countdown" ? (
+        <View style={styles.stage}>
+          <Countdown seconds={COUNTDOWN_SECONDS} onDone={startPlaying} />
+        </View>
+      ) : (
+        <>
       <View style={styles.stage}>
         <Text style={styles.question}>
           {question?.a}
@@ -427,9 +448,22 @@ export function Game({
           {question?.b}
         </Text>
 
-        <View style={[styles.answerBox, showingEcho && styles.answerBoxCorrect]}>
+        {/* La case suit le niveau : à Légendaire une réponse fait 5 chiffres,
+            qui débordaient sur deux lignes dans une case taillée pour 3. */}
+        <View
+          style={[
+            styles.answerBox,
+            { minWidth: 68 + maxDigits * 22 },
+            showingEcho && styles.answerBoxCorrect,
+          ]}
+        >
           <Text
-            style={[styles.answerText, input === "" && !showingEcho && styles.answerPlaceholder]}
+            numberOfLines={1}
+            style={[
+              styles.answerText,
+              { fontSize: maxDigits >= 5 ? 32 : maxDigits === 4 ? 35 : 38 },
+              input === "" && !showingEcho && styles.answerPlaceholder,
+            ]}
           >
             {input !== "" ? input : showingEcho ? echo : "?"}
           </Text>
@@ -452,6 +486,8 @@ export function Game({
         onDelete={handleDelete}
         onReset={handleReset}
       />
+        </>
+      )}
     </SafeAreaView>
   );
 }
@@ -561,9 +597,11 @@ const styles = StyleSheet.create({
   question: { fontSize: 46, fontWeight: "800", color: colors.textPrimary },
   questionSymbol: { color: colors.green },
 
+  // `minWidth` est posé au rendu, d'après le niveau. La hauteur, elle, ne
+  // bouge pas : la case doit rester au même endroit d'un niveau à l'autre.
   answerBox: {
-    width: 104,
     height: 104,
+    paddingHorizontal: spacing.lg,
     borderRadius: radius.xl,
     backgroundColor: colors.surfaceRaised,
     borderWidth: 2,
@@ -575,7 +613,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.greenSoft,
     borderColor: colors.green,
   },
-  answerText: { fontSize: 38, fontWeight: "700", color: colors.textPrimary },
+  // `fontSize` est posé au rendu, d'après le niveau.
+  answerText: { fontWeight: "700", color: colors.textPrimary },
   answerPlaceholder: { color: colors.textDisabled },
 
   stats: {

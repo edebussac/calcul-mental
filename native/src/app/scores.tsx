@@ -18,7 +18,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { getDb } from "@/lib/db/client";
 import type { Session } from "@/lib/db/schema";
 import { analyzeFacts, type FactAnalysis } from "@/lib/game/adaptive";
-import { OPERATION_CONFIG } from "@/lib/game/operations";
+import { LEVEL_CONFIG, isLevel } from "@/lib/game/levels";
+import {
+  OPERATION_CONFIG,
+  OPERATION_MENU_ORDER,
+  type Operation,
+} from "@/lib/game/operations";
 import { useProfile } from "@/lib/profile";
 import { multiplicationFactStats } from "@/lib/services/factStats";
 import { bestScores, recentSessions, type BestScore } from "@/lib/services/sessions";
@@ -26,6 +31,10 @@ import { colors, radius, shadow, spacing } from "@/theme";
 
 /** Nombre de calculs faibles affichés — repris du banc d'essai. */
 const WEAK_FACTS_SHOWN = 8;
+/** Parties relues en base, avant filtrage par opération. */
+const HISTORY_FETCHED = 80;
+/** Parties affichées après filtrage. */
+const HISTORY_SHOWN = 12;
 
 function formatDate(date: Date): string {
   return date.toLocaleString("fr-FR", {
@@ -49,6 +58,8 @@ export default function ScoresScreen() {
   const [scores, setScores] = useState<BestScore[] | null>(null);
   const [history, setHistory] = useState<Session[] | null>(null);
   const [weakFacts, setWeakFacts] = useState<FactAnalysis[] | null>(null);
+  /** Opération affichée ; `null` = tout. */
+  const [filter, setFilter] = useState<Operation | null>(null);
 
   useEffect(() => {
     if (!ready || !profile) return;
@@ -58,7 +69,9 @@ export default function ScoresScreen() {
     void bestScores(db, profile.id)
       .then((r) => alive && setScores(r))
       .catch(() => alive && setScores([]));
-    void recentSessions(db, profile.id)
+    // On récupère large puis on filtre à l'affichage : sans ça, filtrer sur
+    // « Addition » après dix parties de multiplication ne montrerait rien.
+    void recentSessions(db, profile.id, HISTORY_FETCHED)
       .then((r) => alive && setHistory(r))
       .catch(() => alive && setHistory([]));
     void multiplicationFactStats(db, profile.id)
@@ -71,6 +84,14 @@ export default function ScoresScreen() {
       alive = false;
     };
   }, [ready, profile]);
+
+  const shownScores = scores?.filter((s) => !filter || s.operation === filter);
+  const shownHistory = history
+    ?.filter((h) => !filter || h.operation === filter)
+    .slice(0, HISTORY_SHOWN);
+  // Les faits travaillés n'existent que pour la multiplication : afficher la
+  // section sous un filtre « Addition » promettrait des données inexistantes.
+  const showWeakFacts = !filter || filter === "multiplication";
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "left", "right"]}>
@@ -94,16 +115,37 @@ export default function ScoresScreen() {
 
         {profile ? (
           <>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterRow}
+            >
+              <FilterChip
+                label="Tout"
+                active={filter === null}
+                onPress={() => setFilter(null)}
+              />
+              {OPERATION_MENU_ORDER.map((op) => (
+                <FilterChip
+                  key={op}
+                  label={OPERATION_CONFIG[op].label}
+                  symbol={OPERATION_CONFIG[op].symbol}
+                  active={filter === op}
+                  onPress={() => setFilter(op)}
+                />
+              ))}
+            </ScrollView>
+
             <Section title="Records">
-              {scores === null ? (
+              {shownScores === undefined ? (
                 <Text style={styles.muted}>Chargement…</Text>
-              ) : scores.length === 0 ? (
+              ) : shownScores.length === 0 ? (
                 <Text style={styles.muted}>
                   Aucune partie enregistrée pour l’instant.
                 </Text>
               ) : (
                 <View style={styles.cards}>
-                  {scores.map((s) => (
+                  {shownScores.map((s) => (
                     <View key={s.operation} style={styles.recordCard}>
                       <View style={styles.recordLeft}>
                         <Text style={styles.symbol}>
@@ -126,15 +168,15 @@ export default function ScoresScreen() {
             </Section>
 
             <Section title="Historique">
-              {history === null ? (
+              {shownHistory === undefined ? (
                 <Text style={styles.muted}>Chargement…</Text>
-              ) : history.length === 0 ? (
+              ) : shownHistory.length === 0 ? (
                 <Text style={styles.muted}>
                   Rien pour l’instant. Joue une partie !
                 </Text>
               ) : (
                 <View style={styles.panel}>
-                  {history.map((h, i) => (
+                  {shownHistory.map((h, i) => (
                     <View
                       key={h.id}
                       style={[styles.historyRow, i > 0 && styles.divided]}
@@ -143,9 +185,19 @@ export default function ScoresScreen() {
                         <Text style={styles.symbolSmall}>
                           {OPERATION_CONFIG[h.operation]?.symbol ?? "?"}
                         </Text>
-                        <Text style={styles.muted}>
-                          {formatDate(h.startedAt)}
-                        </Text>
+                        <View>
+                          <Text style={styles.muted}>
+                            {formatDate(h.startedAt)}
+                          </Text>
+                          {/* Le niveau change la plage d'opérandes : sans lui,
+                              deux scores très différents sont incomparables. */}
+                          <Text style={styles.historyLevel}>
+                            {isLevel(h.level)
+                              ? LEVEL_CONFIG[h.level].label
+                              : `niveau ${h.level}`}
+                            {h.mode === "adaptive" ? " · ciblé" : ""}
+                          </Text>
+                        </View>
                       </View>
                       <Text style={styles.historyScore}>
                         {h.correctCount}{" "}
@@ -158,7 +210,8 @@ export default function ScoresScreen() {
               )}
             </Section>
 
-            <Section title="Calculs à travailler">
+            {showWeakFacts ? (
+            <Section title="Multiplications à retravailler">
               {weakFacts === null ? (
                 <Text style={styles.muted}>Chargement…</Text>
               ) : weakFacts.length === 0 ? (
@@ -194,11 +247,41 @@ export default function ScoresScreen() {
                 </View>
               )}
             </Section>
-
+            ) : null}
           </>
         ) : null}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function FilterChip({
+  label,
+  symbol,
+  active,
+  onPress,
+}: {
+  label: string;
+  symbol?: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.chip, active && styles.chipActive]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+    >
+      {symbol ? (
+        <Text style={[styles.chipSymbol, active && styles.chipTextActive]}>
+          {symbol}
+        </Text>
+      ) : null}
+      <Text style={[styles.chipText, active && styles.chipTextActive]}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -242,6 +325,23 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   muted: { fontSize: 14, color: colors.textSecondary },
+
+  filterRow: { gap: spacing.sm, paddingRight: spacing.xl },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chipActive: { backgroundColor: colors.green, borderColor: colors.green },
+  chipText: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
+  chipSymbol: { fontSize: 14, fontWeight: "700", color: colors.green },
+  chipTextActive: { color: colors.white },
 
   cards: { gap: spacing.md },
   recordCard: {
@@ -292,6 +392,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   historyLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  historyLevel: { fontSize: 11, color: colors.textMuted },
   historyScore: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
 
   weakRow: { gap: spacing.xs, padding: spacing.md },
