@@ -58,18 +58,25 @@ racine du dépôt.
 
 ## État
 
-Étapes 1 à 3 du plan de migration faites : squelette, persistance locale, et les
-écrans (accueil, jeu, scores) avec le pavé numérique.
+Étapes 1 à 4 du plan de migration faites : squelette, persistance locale,
+écrans (accueil, jeu, scores) avec pavé numérique, et **installée sur un vrai
+iPhone** (build de dev). Identité visuelle (icône, splash) posée en avance sur
+l'étape 5.
 
-Les **niveaux** existent aussi, ce que le banc d'essai web n'a jamais eu : quatre
-plages d'opérandes, de `Facile` (1–10, le comportement historique) à
-`Légendaire` (2–100). Voir `src/lib/game/levels.ts`.
+Au-delà du plan initial : **niveaux** (`Facile` 1–10 à `Légendaire` 2–100, voir
+`src/lib/game/levels.ts`), décompte de 3 s avant chaque partie, filtres sur
+l'écran des scores.
 
 Reste « à venir », et présenté comme tel dans l'app : le **mode vocal**.
 
-Ce qui n'a pas encore été vu sur un vrai téléphone (§9 du doc de migration) :
-l'haptique, le ressenti de la saisie, et le chevauchement réel de deux doigts
-sur le pavé.
+Vérifié sur un vrai iPhone : la saisie à 5 chiffres (Légendaire), l'haptique
+(ajustée deux fois sur retour direct — voir `src/lib/haptics.ts`). **Pas
+encore vérifié** : le chevauchement réel de deux doigts sur le pavé (§7/§9 du
+doc de migration) — le seul point du plan qu'aucun test, aucun simulateur, ne
+peut prouver.
+
+Pas commencé : publication (compte développeur Apple à 99 €/an, TestFlight,
+App Store — étape 5) et Android (étape 6, compte Google Play 25 $).
 
 Règles de contribution : [`AGENTS.md`](AGENTS.md).
 Contexte, décisions et pièges : [`../MIGRATION-MOBILE.md`](../MIGRATION-MOBILE.md).
