@@ -36,3 +36,22 @@ export function haptic(): void {
   pulse();
   setTimeout(pulse, SECOND_PULSE_MS);
 }
+
+/**
+ * Record personnel battu.
+ *
+ * `notificationAsync` et non un troisième `impactAsync` : cette secousse tombe
+ * **juste après** le doublé de la bonne réponse qui vient de faire le record.
+ * Une impulsion de plus, même d'intensité différente, s'y ajouterait en un long
+ * buzz indistinct ; le motif du retour « succès » du système est d'une autre
+ * nature, et c'est ce qui le rend reconnaissable à cet endroit précis.
+ *
+ * Tiré et oublié, comme `haptic()`.
+ */
+export function celebrate(): void {
+  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
+    () => {
+      /* appareil sans moteur haptique, ou retour désactivé par l'utilisateur */
+    },
+  );
+}

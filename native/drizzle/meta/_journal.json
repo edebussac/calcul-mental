@@ -8,6 +8,13 @@
       "when": 1785404567760,
       "tag": "0000_confused_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785613445609,
+      "tag": "0001_lively_zaladane",
+      "breakpoints": true
     }
   ]
 }

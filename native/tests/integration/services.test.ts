@@ -10,6 +10,7 @@ import {
   bestScoreFor,
   bestScores,
   recentSessions,
+  personalBest,
   saveSession,
 } from "@/lib/services/sessions";
 import type { AnswerRecord } from "@/lib/game/engine";
@@ -31,12 +32,16 @@ const answer = (a: number, b: number, given: number): AnswerRecord => ({
   maxIdleMs: 0,
 });
 
-/** Socle commun : `platform` est requis dans l'app native (cf. sessions.ts). */
+/**
+ * Socle commun : `platform` et `voice` sont requis dans l'app native
+ * (cf. sessions.ts).
+ */
 const sessionBase = (profileId: number) => ({
   profileId,
   operation: "multiplication" as const,
   durationSeconds: 60,
   platform: "ios" as const,
+  voice: false,
 });
 
 describe("profiles service", () => {
@@ -101,9 +106,9 @@ describe("sessions service", () => {
     expect(recent[0].id).toBe(session.id);
   });
 
-  it("agrège le meilleur score (max de bonnes réponses) par opération", async () => {
+  it("agrège le meilleur score (max de bonnes réponses) par conditions", async () => {
     const profile = await getOrCreateProfile(db, "Tom");
-    const base = sessionBase(profile.id);
+    const base = { ...sessionBase(profile.id), level: 1 };
     // 1, puis 3, puis 2 bonnes réponses → record = 3.
     await saveSession(db, { ...base, answers: [answer(2, 2, 4)] });
     await saveSession(db, {
@@ -117,9 +122,43 @@ describe("sessions service", () => {
 
     const scores = await bestScores(db, profile.id);
     expect(scores).toEqual([
-      { operation: "multiplication", bestScore: 3, plays: 3 },
+      {
+        operation: "multiplication",
+        level: 1,
+        mode: "classic",
+        voice: false,
+        bestScore: 3,
+        plays: 3,
+      },
     ]);
+    // `bestScoreFor` reste large (toute l'opération) : il sert les usages qui
+    // regardent une opération en bloc, pas l'affichage des records.
     expect(await bestScoreFor(db, profile.id, "multiplication")).toBe(3);
+  });
+
+  it("sépare les records par niveau et par énoncé", async () => {
+    // C'est ce qui distingue cet écran d'un simple « meilleur par opération » :
+    // un 3 fait à Facile ne doit pas se présenter comme le record de Légendaire,
+    // ni un score écrit comme un score vocal.
+    const profile = await getOrCreateProfile(db, "Iris");
+    const base = sessionBase(profile.id);
+    const three = [answer(2, 2, 4), answer(3, 3, 9), answer(4, 4, 16)];
+    await saveSession(db, { ...base, level: 1, answers: three });
+    await saveSession(db, { ...base, level: 4, answers: [answer(2, 2, 4)] });
+    await saveSession(db, {
+      ...base,
+      level: 1,
+      voice: true,
+      answers: [answer(2, 2, 4), answer(3, 3, 9)],
+    });
+
+    const scores = await bestScores(db, profile.id);
+    expect(scores).toHaveLength(3);
+    const find = (level: number, voice: boolean) =>
+      scores.find((s) => s.level === level && s.voice === voice);
+    expect(find(1, false)?.bestScore).toBe(3);
+    expect(find(4, false)?.bestScore).toBe(1);
+    expect(find(1, true)?.bestScore).toBe(2);
   });
 
   it("renvoie 0 comme meilleur score sans partie jouée", async () => {
@@ -149,6 +188,18 @@ describe("sessions service", () => {
     expect(android.platform).toBe("android");
   });
 
+  it("persiste la lecture à voix haute, obligatoire elle aussi", async () => {
+    // Requise pour la même raison que `platform` : entendre l'énoncé change les
+    // `response_ms`, et une partie mal étiquetée n'est plus rattrapable — elle
+    // pollue durablement les percentiles du modèle adaptatif.
+    const profile = await getOrCreateProfile(db, "Anna");
+    const base = { ...sessionBase(profile.id), answers: [answer(2, 2, 4)] };
+    const silencieuse = await saveSession(db, base);
+    const énoncée = await saveSession(db, { ...base, voice: true });
+    expect(silencieuse.voice).toBe(false);
+    expect(énoncée.voice).toBe(true);
+  });
+
   it("persiste le niveau choisi, et retombe sur 1 s'il est omis", async () => {
     // Le niveau détermine la plage d'opérandes : sans lui en base, deux
     // parties de difficultés opposées seraient indiscernables dans
@@ -159,6 +210,66 @@ describe("sessions service", () => {
     const parDefaut = await saveSession(db, base);
     expect(legendaire.level).toBe(4);
     expect(parDefaut.level).toBe(1);
+  });
+
+  it("rend null comme record tant qu'aucune partie n'a été jouée", async () => {
+    // `null` et non `0` : on n'annonce pas « record battu » à qui n'en a pas.
+    const profile = await getOrCreateProfile(db, "Zoé");
+    const best = await personalBest(db, {
+      profileId: profile.id,
+      operation: "multiplication",
+      level: 1,
+      mode: "classic",
+      voice: false,
+    });
+    expect(best).toBeNull();
+  });
+
+  it("ne compare le record qu'à conditions identiques", async () => {
+    const profile = await getOrCreateProfile(db, "Gaspard");
+    const base = { ...sessionBase(profile.id), level: 1 };
+    const three = [answer(2, 2, 4), answer(3, 3, 9), answer(4, 4, 16)];
+
+    // Un gros score dans CHACUNE des conditions voisines…
+    await saveSession(db, { ...base, level: 4, answers: three });
+    await saveSession(db, { ...base, mode: "adaptive", answers: three });
+    await saveSession(db, { ...base, voice: true, answers: three });
+    await saveSession(db, { ...base, operation: "addition", answers: three });
+    // …et un petit dans les conditions visées.
+    await saveSession(db, { ...base, answers: [answer(2, 2, 4)] });
+
+    const scope = {
+      profileId: profile.id,
+      operation: "multiplication" as const,
+      level: 1,
+      mode: "classic" as const,
+      voice: false,
+    };
+    // 1 et non 3 : aucune des parties voisines ne compte. Sans ce cloisonnement,
+    // un record hérité de Facile rendrait l'annonce injoignable à Légendaire.
+    expect(await personalBest(db, scope)).toBe(1);
+
+    // Chaque condition a bien son propre record, du même historique.
+    expect(await personalBest(db, { ...scope, level: 4 })).toBe(3);
+    expect(await personalBest(db, { ...scope, voice: true })).toBe(3);
+    expect(await personalBest(db, { ...scope, mode: "adaptive" })).toBe(3);
+  });
+
+  it("ne mélange pas les records de deux profils", async () => {
+    const emma = await getOrCreateProfile(db, "Emma-record");
+    const tom = await getOrCreateProfile(db, "Tom-record");
+    await saveSession(db, {
+      ...sessionBase(emma.id),
+      answers: [answer(2, 2, 4), answer(3, 3, 9)],
+    });
+    const scope = {
+      operation: "multiplication" as const,
+      level: 1,
+      mode: "classic" as const,
+      voice: false,
+    };
+    expect(await personalBest(db, { ...scope, profileId: emma.id })).toBe(2);
+    expect(await personalBest(db, { ...scope, profileId: tom.id })).toBeNull();
   });
 
   it("persiste le clientUuid, absent par défaut", async () => {

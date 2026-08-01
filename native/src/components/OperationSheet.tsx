@@ -6,8 +6,9 @@
  * grise les autres — ses questions viennent de l'historique de multiplication,
  * qui ne travaille que la table jusqu'à 10 × 10 (cf. `lib/game/levels.ts`).
  *
- * Les blocs non développés sont **affichés et grisés**, jamais masqués : la
- * maquette les anticipe volontairement.
+ * Le bloc ③ porte l'**énoncé** (écrit ou lu), et non le mode de *réponse* :
+ * la réponse dictée a été retirée de la maquette, elle ne sera pas proposée.
+ * Les deux options s'excluent — cf. `Game.tsx` pour la conséquence à l'écran.
  */
 
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -25,6 +26,7 @@ import {
 import { OPERATION_CONFIG } from "@/lib/game/operations";
 import type { Operation } from "@/lib/game/operations";
 import type { SessionMode } from "@/lib/services/sessions";
+import { useVoiceEnabled } from "@/lib/settings";
 import { colors, radius, spacing } from "@/theme";
 
 /** Une partie dure 60 s (repris du banc d'essai, `DURATION_SECONDS`). */
@@ -54,6 +56,10 @@ interface Props {
 export function OperationSheet({ operation, onClose, onStart }: Props) {
   const [mode, setMode] = useState<SessionMode>("classic");
   const [level, setLevel] = useState<Level>(DEFAULT_LEVEL);
+  // Seul réglage de cette feuille qui SURVIT à sa fermeture : il est global à
+  // l'appareil (cf. `lib/settings.ts`), là où le mode et le niveau ne valent
+  // que pour la partie qu'on lance.
+  const { voiceEnabled, setVoiceEnabled } = useVoiceEnabled();
 
   // Le ciblage adaptatif s'appuie sur `multiplicationFactStats`, qui n'a pas
   // d'équivalent pour les autres opérations.
@@ -175,20 +181,24 @@ export function OperationSheet({ operation, onClose, onStart }: Props) {
           })}
         </View>
 
-        {/* ③ Mode de réponse — la saisie au pavé existe ; le vocal, non. */}
-        <SectionLabel index="3" label="Mode de réponse" />
+        {/* ③ Énoncé — les deux options s'EXCLUENT : en vocal, la question n'est
+            pas affichée, sinon la voix ne serait qu'un doublon de l'écrit. */}
+        <SectionLabel index="3" label="Énoncé" hint="réglage gardé" />
         <View style={styles.row}>
           <OptionCard
-            icon="keyboard-outline"
-            label="Classique"
+            icon="format-text"
+            label="Écrit"
             tint={colors.green}
-            selected
+            selected={!voiceEnabled}
+            onPress={() => setVoiceEnabled(false)}
           />
           <OptionCard
-            icon="microphone-outline"
+            icon="volume-high"
             label="Vocal"
             tint={colors.purple}
-            comingSoon
+            selected={voiceEnabled}
+            note="question non affichée"
+            onPress={() => setVoiceEnabled(true)}
           />
         </View>
 
@@ -240,7 +250,6 @@ function OptionCard({
   tint,
   selected,
   disabled,
-  comingSoon,
   note,
   onPress,
 }: {
@@ -249,11 +258,10 @@ function OptionCard({
   tint: string;
   selected?: boolean;
   disabled?: boolean;
-  comingSoon?: boolean;
   note?: string;
   onPress?: () => void;
 }) {
-  const inactive = disabled || comingSoon;
+  const inactive = disabled;
   return (
     <Pressable
       style={[
@@ -289,7 +297,6 @@ function OptionCard({
           <Ionicons name="checkmark" size={13} color={colors.white} />
         </View>
       ) : null}
-      {comingSoon ? <Text style={styles.cardNote}>à venir</Text> : null}
       {note ? <Text style={styles.cardNote}>{note}</Text> : null}
     </Pressable>
   );

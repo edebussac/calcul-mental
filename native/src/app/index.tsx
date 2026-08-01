@@ -2,8 +2,9 @@
  * Accueil — choix du profil et de l'entraînement.
  *
  * Les 5 opérations sont actives : le moteur sait toutes les jouer depuis le
- * commit c53d053. Ce qui porte « à venir », c'est ce qui n'existe pas dans le
- * code — le niveau et le mode vocal, dans la feuille de configuration.
+ * commit c53d053. La feuille de configuration ne porte plus aucun « à venir » :
+ * le niveau et l'énoncé vocal existent, et la réponse dictée — seule option qui
+ * restait à l'état de maquette — a été retirée, elle ne sera pas proposée.
  */
 
 import Ionicons from "@expo/vector-icons/Ionicons";

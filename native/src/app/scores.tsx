@@ -1,9 +1,15 @@
 /**
  * Écran des scores, porté de `app/scores/page.tsx` du banc d'essai web.
  *
- * Mêmes sections, mêmes données — à une exception près : **pas d'export**. Le
- * banc d'essai proposait un téléchargement JSON/CSV ; l'app n'en propose pas,
- * et les modules correspondants ont été retirés plutôt que laissés en sommeil.
+ * Mêmes sections que le banc d'essai, à deux différences près :
+ *
+ * - **Pas d'export.** Le banc d'essai proposait un téléchargement JSON/CSV ;
+ *   l'app n'en propose pas, et les modules correspondants ont été retirés
+ *   plutôt que laissés en sommeil.
+ * - **Les records sont par conditions de jeu**, et non par opération : une carte
+ *   par niveau × opération × énoncé (× mode). C'est le regroupement de
+ *   `personalBest`, et il doit le rester — cet écran affiche le record que la
+ *   partie annonce, les deux ne peuvent pas se contredire.
  *
  * Les trois `fetch` deviennent des lectures SQLite locales : l'écran s'affiche
  * donc en avion.
@@ -85,7 +91,20 @@ export default function ScoresScreen() {
     };
   }, [ready, profile]);
 
-  const shownScores = scores?.filter((s) => !filter || s.operation === filter);
+  // Une carte par conditions de jeu (niveau × opération × énoncé × mode), dans
+  // l'ordre du menu puis du niveau — sinon SQLite les rend dans l'ordre de son
+  // regroupement, qui n'a aucune raison de suivre celui de l'accueil.
+  const shownScores = scores
+    ?.filter((s) => !filter || s.operation === filter)
+    .slice()
+    .sort(
+      (a, b) =>
+        OPERATION_MENU_ORDER.indexOf(a.operation) -
+          OPERATION_MENU_ORDER.indexOf(b.operation) ||
+        a.level - b.level ||
+        Number(a.voice) - Number(b.voice) ||
+        a.mode.localeCompare(b.mode),
+    );
   const shownHistory = history
     ?.filter((h) => !filter || h.operation === filter)
     .slice(0, HISTORY_SHOWN);
@@ -146,14 +165,30 @@ export default function ScoresScreen() {
               ) : (
                 <View style={styles.cards}>
                   {shownScores.map((s) => (
-                    <View key={s.operation} style={styles.recordCard}>
+                    <View
+                      // Quatre critères dans la clé : c'est exactement ce qui
+                      // distingue deux cartes, donc deux parties de conditions
+                      // différentes ne peuvent pas se recouvrir.
+                      key={`${s.operation}-${s.level}-${s.mode}-${s.voice}`}
+                      style={styles.recordCard}
+                    >
                       <View style={styles.recordLeft}>
                         <Text style={styles.symbol}>
                           {OPERATION_CONFIG[s.operation]?.symbol ?? "?"}
                         </Text>
-                        <Text style={styles.recordLabel}>
-                          {OPERATION_CONFIG[s.operation]?.label ?? s.operation}
-                        </Text>
+                        <View style={styles.recordTitles}>
+                          <Text style={styles.recordLabel}>
+                            {isLevel(s.level)
+                              ? LEVEL_CONFIG[s.level].label
+                              : `Niveau ${s.level}`}{" "}
+                            ·{" "}
+                            {OPERATION_CONFIG[s.operation]?.label ?? s.operation}
+                          </Text>
+                          <Text style={styles.recordConditions}>
+                            {s.voice ? "vocal" : "écrit"}
+                            {s.mode === "adaptive" ? " · ciblé" : ""}
+                          </Text>
+                        </View>
                       </View>
                       <View style={styles.recordRight}>
                         <Text style={styles.recordScore}>{s.bestScore}</Text>
@@ -354,7 +389,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     ...shadow.card,
   },
-  recordLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  recordLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
   symbol: {
     width: 24,
     textAlign: "center",
@@ -369,7 +409,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.green,
   },
+  // `flexShrink` : « Légendaire · Multiplication » est long, il doit se serrer
+  // plutôt que pousser le score hors de la carte.
+  recordTitles: { flexShrink: 1, gap: 1 },
   recordLabel: { fontSize: 16, fontWeight: "500", color: colors.textPrimary },
+  recordConditions: { fontSize: 11, color: colors.textMuted },
   recordRight: { alignItems: "flex-end" },
   recordScore: { fontSize: 24, fontWeight: "800", color: colors.textPrimary },
   recordMeta: { fontSize: 11, color: colors.textSecondary },

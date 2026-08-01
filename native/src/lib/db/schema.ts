@@ -68,6 +68,19 @@ export const sessions = sqliteTable("sessions", {
     .notNull()
     .default("web"),
   /**
+   * L'énoncé était-il lu à voix haute ?
+   *
+   * Même raison d'être que `platform` ci-dessus : entendre « 10 fois 9 » pendant
+   * qu'on le lit ne donne pas les mêmes `response_ms` que le lire seul, et le
+   * modèle adaptatif se calibre précisément sur ces temps (MIGRATION-MOBILE.md
+   * §4.2). Sans cette colonne, un historique qui mêle les deux fausse les
+   * percentiles de `playerRefs()` — et rien ne permet de les retrier après coup.
+   *
+   * Le défaut `false` vaut aussi pour les parties d'avant la fonctionnalité,
+   * qui étaient bien toutes silencieuses.
+   */
+  voice: integer("voice", { mode: "boolean" }).notNull().default(false),
+  /**
    * Identifiant tiré par le client, une fois par partie. Deux téléphones en
    * SQLite local produisent chacun une session `id = 1` : c'est lui, et non
    * `id`, qui identifie une partie lors d'une synchro, ce qui la rend

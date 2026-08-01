@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `voice` integer DEFAULT false NOT NULL;

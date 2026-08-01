@@ -7,6 +7,7 @@
 
 import {
   BASE_OPERATIONS,
+  OPERATION_CONFIG,
   type BaseOperation,
   type Operation,
 } from "./operations";
@@ -125,4 +126,20 @@ export function drawDistinctQuestion(
 /** Représentation lisible d'une question, ex. "4 × 3". */
 export function formatQuestion(question: Question, symbol: string): string {
   return `${question.a} ${symbol} ${question.b}`;
+}
+
+/**
+ * Énoncé à **prononcer**, ex. « 10 fois 9 ».
+ *
+ * Contrairement à `formatQuestion`, le symbole n'est pas injecté : il est lu
+ * sur `question.operation`. C'est délibéré. L'appelant qui compose l'affichage
+ * dispose légitimement du symbole de l'opération *choisie* (`all` en mode
+ * aléatoire) ; le faire passer ici ferait prononcer « 7 ? 8 » à chaque question
+ * de ce mode. La question, elle, porte toujours son opération résolue.
+ *
+ * Reste du TypeScript pur — donc testable sous Node, sans moteur vocal.
+ */
+export function spokenQuestion(question: Question): string {
+  const { spokenSymbol } = OPERATION_CONFIG[question.operation];
+  return `${question.a} ${spokenSymbol} ${question.b}`;
 }

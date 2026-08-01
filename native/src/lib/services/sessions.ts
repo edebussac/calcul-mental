@@ -30,6 +30,13 @@ export interface SaveSessionInput {
    * typage.
    */
   platform: Platform;
+  /**
+   * L'énoncé était-il lu à voix haute ? **Obligatoire pour la même raison que
+   * `platform`** : la valeur ne se retrouve pas après coup, et une partie
+   * énoncée rangée par défaut parmi les parties silencieuses pollue les temps
+   * de réponse dont s'auto-calibre le modèle adaptatif.
+   */
+  voice: boolean;
   /** Identifiant de partie tiré par le client — clé de synchro idempotente. */
   clientUuid?: string;
   answers: AnswerRecord[];
@@ -66,6 +73,7 @@ export async function saveSession(
         score: correctCount, // le score EST le nombre de bonnes réponses
         mode: input.mode ?? "classic",
         platform: input.platform,
+        voice: input.voice,
         clientUuid: input.clientUuid,
       })
       .returning()
@@ -95,11 +103,26 @@ export async function saveSession(
 
 export interface BestScore {
   operation: Operation;
+  level: number;
+  mode: SessionMode;
+  voice: boolean;
   bestScore: number;
   plays: number;
 }
 
-/** Meilleur score (= max de bonnes réponses) et nb de parties par opération. */
+/**
+ * Meilleur score (= max de bonnes réponses) et nombre de parties, **par
+ * conditions de jeu** : une ligne par (opération, niveau, mode, énoncé).
+ *
+ * Le regroupement est celui de `personalBest`, et ce n'est pas un hasard : cet
+ * écran affiche le record que la partie annonce. Regrouper plus large ferait
+ * afficher ici un « meilleur » que le jeu ne reconnaîtrait jamais — un 24 hérité
+ * de Facile en face d'un joueur qui plafonne à 11 en Légendaire.
+ *
+ * `mode` fait partie des clés bien qu'il ne concerne que la multiplication : le
+ * mode ciblé sert exprès les calculs les plus lents du joueur, ses scores ne se
+ * mêlent pas à ceux du mode normal.
+ */
 export async function bestScores(
   db: Database,
   profileId: number,
@@ -107,16 +130,22 @@ export async function bestScores(
   const rows = await db
     .select({
       operation: sessions.operation,
+      level: sessions.level,
+      mode: sessions.mode,
+      voice: sessions.voice,
       bestScore: sql<number>`max(${sessions.correctCount})`,
       plays: sql<number>`count(*)`,
     })
     .from(sessions)
     .where(eq(sessions.profileId, profileId))
-    .groupBy(sessions.operation);
+    .groupBy(sessions.operation, sessions.level, sessions.mode, sessions.voice);
 
   // Certains drivers renvoient les agrégats en texte → on normalise en nombre.
   return rows.map((r) => ({
     operation: r.operation,
+    level: Number(r.level),
+    mode: r.mode,
+    voice: r.voice,
     bestScore: Number(r.bestScore),
     plays: Number(r.plays),
   }));
@@ -134,6 +163,57 @@ export async function recentSessions(
     .where(eq(sessions.profileId, profileId))
     .orderBy(desc(sessions.startedAt))
     .limit(limit);
+}
+
+/** Les conditions qui rendent deux parties comparables entre elles. */
+export interface RecordScope {
+  profileId: number;
+  operation: Operation;
+  level: number;
+  mode: SessionMode;
+  voice: boolean;
+}
+
+/**
+ * Record personnel **à conditions identiques**, ou `null` si le joueur n'a
+ * encore jamais joué dans celles-ci.
+ *
+ * Volontairement plus étroit que `bestScoreFor`, qui n'isole que l'opération et
+ * sert l'écran des scores, où l'on regarde une opération en bloc. Ici on annonce
+ * « record battu » : la promesse doit être vraie, et elle ne l'est qu'à
+ * difficulté égale. Chacun des quatre critères a déjà sa raison d'être ailleurs
+ * dans le code —
+ *
+ * - `level` change la plage d'opérandes (`levels.ts`) : un record de Facile est
+ *   inatteignable à Légendaire, l'annonce ne se déclencherait jamais ;
+ * - `mode` : le mode ciblé sert exprès les calculs les plus lents du joueur ;
+ * - `voice` : l'énoncé lu remplace l'énoncé écrit et ne se parcourt pas à
+ *   l'œil (cf. la colonne du même nom dans le schéma).
+ *
+ * Le `null` compte : il distingue « aucune partie » de « une partie à 0 », ce
+ * qu'un `0` de repli confondrait — et on n'annonce pas un record battu à
+ * quelqu'un qui n'en avait pas.
+ */
+export async function personalBest(
+  db: Database,
+  scope: RecordScope,
+): Promise<number | null> {
+  const rows = await db
+    .select({ best: sql<number | null>`max(${sessions.correctCount})` })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.profileId, scope.profileId),
+        eq(sessions.operation, scope.operation),
+        eq(sessions.level, scope.level),
+        eq(sessions.mode, scope.mode),
+        eq(sessions.voice, scope.voice),
+      ),
+    );
+
+  // `max()` sans ligne rend NULL — c'est ce NULL qui porte « jamais joué ».
+  const best = rows[0]?.best;
+  return best === null || best === undefined ? null : Number(best);
 }
 
 /** Meilleur score (bonnes réponses) pour une opération (0 si aucune partie). */

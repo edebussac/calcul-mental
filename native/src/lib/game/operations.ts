@@ -26,26 +26,57 @@ export interface OperationConfig {
   label: string;
   /** Symbole mathématique affiché entre les opérandes. */
   symbol: string;
+  /**
+   * Le même symbole, **prononcé** (FR), pour la lecture à voix haute.
+   *
+   * Séparé de `symbol` parce qu'aucun moteur TTS ne lit correctement les
+   * symboles mathématiques : « × » se dit selon les voix « x », « fois » ou
+   * rien du tout, et « − » (U+2212, le vrai signe moins) n'est presque jamais
+   * reconnu. On ne laisse donc pas la voix les interpréter.
+   */
+  spokenSymbol: string;
   /** Activée dans l'UI ? */
   enabled: boolean;
 }
 
 export const OPERATION_CONFIG: Record<Operation, OperationConfig> = {
-  all: { id: "all", label: "Aléatoire", symbol: "?", enabled: true },
-  division: { id: "division", label: "Division", symbol: "÷", enabled: true },
+  // `all` n'est jamais prononcée : `spokenQuestion` lit `question.operation`,
+  // qui est toujours une opération de base (`all` y est déjà résolue).
+  all: {
+    id: "all",
+    label: "Aléatoire",
+    symbol: "?",
+    spokenSymbol: "?",
+    enabled: true,
+  },
+  division: {
+    id: "division",
+    label: "Division",
+    symbol: "÷",
+    spokenSymbol: "divisé par",
+    enabled: true,
+  },
   multiplication: {
     id: "multiplication",
     label: "Multiplication",
     symbol: "×",
+    spokenSymbol: "fois",
     enabled: true,
   },
   subtraction: {
     id: "subtraction",
     label: "Soustraction",
     symbol: "−",
+    spokenSymbol: "moins",
     enabled: true,
   },
-  addition: { id: "addition", label: "Addition", symbol: "+", enabled: true },
+  addition: {
+    id: "addition",
+    label: "Addition",
+    symbol: "+",
+    spokenSymbol: "plus",
+    enabled: true,
+  },
 };
 
 /** Ordre d'affichage dans le menu (identique aux captures). */

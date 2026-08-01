@@ -83,6 +83,84 @@ responder n'attribue le toucher qu'à une seule vue.
 > `locationX/Y` reste relatif au pavé, et chaque doigt est suivi par son
 > `identifier` — c'est ce qui donne le chevauchement ordonné.
 
+## L'énoncé à voix haute
+
+`expo-speech` (moteur du système, hors ligne, sans clé). Le partage des rôles
+suit celui de l'haptique : **comment on dit une question** est du jeu et vit
+dans `src/lib/game/` (`spokenQuestion`, `OPERATION_CONFIG.spokenSymbol`,
+testés) ; **faire parler l'appareil** vit dans `src/lib/speech.ts`, en
+tiré-et-oublié — une partie se joue au nombre de réponses par minute, rien ne
+doit faire attendre la saisie.
+
+Trois pièges, tous rencontrés en écrivant le module :
+
+- **`Speech.speak` empile.** Une bonne réponse tombe souvent avant la fin de la
+  lecture ; sans `Speech.stop()` juste avant chaque énoncé, la file s'allonge à
+  chaque question et la voix récite en fin de round des calculs résolus dix
+  coups plus tôt.
+- **L'interrupteur silence de l'iPhone rend la voix muette.** `expo-speech` ne
+  configure aucune session audio et hérite de celle de l'app. D'où l'appel à
+  `setAudioModeAsync({ playsInSilentMode: true })` (`expo-audio`) dans
+  `prepareSpeech()`. Un mobile d'enfant est souvent sur silencieux : sans ça, la
+  fonctionnalité passe pour cassée alors que tout marche.
+- **Ne pas énoncer les symboles bruts.** Aucune voix ne lit correctement « × »
+  ni « − » (U+2212) ; d'où `spokenSymbol` (« fois », « moins »…) à côté de
+  `symbol`.
+
+**Vocal et écrit s'excluent** (décidé sur essai réel) : en vocal la question
+n'est pas affichée, sinon la voix n'en serait qu'un doublon que l'œil doublerait
+toujours. Deux conséquences à ne pas défaire séparément :
+
+- Le **bouton « redire »** de `Game.tsx` n'est pas un confort : sans lui, un
+  chiffre mal entendu ne se rattrape plus par aucun moyen. Il ne touche ni au
+  chronomètre ni à la saisie, mais compte comme signe de vie (`registerActivity`).
+- `isSpeechAvailable()` est interrogé **avant** de masquer l'énoncé : sans partie
+  native, masquer laisserait un écran vide et une partie injouable. On retombe
+  alors sur l'écrit, et `sessions.voice` enregistre `false` — ce qui s'est
+  réellement passé, pas ce qui était réglé.
+
+`sessions.voice` note si la partie a été énoncée — **obligatoire** dans
+`saveSession`, exactement comme `platform` et pour la même raison : entendre
+l'énoncé change les `response_ms`, et le modèle adaptatif se calibre dessus.
+Depuis que l'écrit disparaît en vocal, l'écart entre les deux populations est
+d'ailleurs bien plus large qu'au moment où la colonne a été créée.
+
+> ⚠️ **`expo-speech` et `expo-audio` sont des modules natifs.** Les ajouter ne
+> se recharge pas dans un build de dev existant : il faut refaire
+> `npx expo prebuild` puis le build Xcode ci-dessous.
+>
+> Constaté : importés en tête de `speech.ts`, leur `requireNativeModule` jette
+> **au chargement du module**, ce qui emporte `Game.tsx` puis la route `/play`
+> entière. L'app n'annonce alors pas « pas de voix » mais
+> `Route "./play/[operation].tsx" is missing the required default export`, et le
+> jeu devient injouable — un message qui ne désigne jamais la voix. D'où les
+> `require` différés et rattrapés du module : **ne pas les retransformer en
+> imports statiques**, un accessoire ne doit pas pouvoir emporter le jeu.
+
+## Le record personnel
+
+Annoncé pendant la partie (bannière + retour haptique au franchissement) et sur
+l'écran de résultat. Deux choses à ne pas défaire par simplification :
+
+- **`personalBest` est volontairement plus étroit que `bestScoreFor`.** Le record
+  se compte à conditions identiques — opération, **niveau**, mode, énoncé — parce
+  qu'on en fait une promesse à l'écran. Élargi à l'opération seule, un record posé
+  à Facile rendrait l'annonce inatteignable à Légendaire, et un record posé en
+  écrit le resterait en vocal.
+- **`null` n'est pas `0`.** « Jamais joué dans ces conditions » et « une partie à
+  zéro » donnent deux textes différents, et on n'annonce jamais un record battu à
+  qui n'en avait pas. C'est aussi pourquoi l'annonce exige `best >= 1`.
+
+L'annonce ne retient jamais le jeu : bannière en surimpression,
+`pointerEvents="none"`, question suivante déjà tirée en dessous — même contrat
+que l'écho de la bonne réponse.
+
+**`bestScores` regroupe sur les mêmes quatre clés** et l'écran des scores affiche
+une carte par conditions (« Facile · Multiplication », puis « écrit » ou
+« vocal »). Les deux vues ne peuvent pas diverger : celle des scores annonce le
+record que la partie fera battre. `bestScoreFor`, lui, reste large (l'opération
+entière) — il ne sert pas l'affichage des records.
+
 ## Installer sur un iPhone réel
 
 Expo Go **ne convient plus** : il plafonne au SDK que sa version App Store
@@ -97,13 +175,33 @@ absence du dépôt.
 > framework (`ExpoFileSystem` en l'occurrence), ce qui fait chercher du côté
 > d'une dépendance fautive au lieu de la signature.
 
-Build en signature série, depuis `ios/` :
+Build en signature série, **depuis `ios/`** (et non depuis `native/`, où
+`xcodebuild` répond seulement `'Blitzmatic.xcworkspace' does not exist`) :
 
 ```bash
 xcodebuild -workspace Blitzmatic.xcworkspace -scheme Blitzmatic \
   -configuration Debug -destination "id=<UDID>" \
-  -allowProvisioningUpdates COCOAPODS_PARALLEL_CODE_SIGN=NO
+  -allowProvisioningUpdates DEVELOPMENT_TEAM=<TEAM_ID> \
+  CODE_SIGN_STYLE=Automatic COCOAPODS_PARALLEL_CODE_SIGN=NO
 ```
+
+`<UDID>` se lit avec `xcrun devicectl list devices`, `<TEAM_ID>` avec
+`security find-identity -v -p codesigning` (l'identifiant entre parenthèses est
+celui du *certificat*, pas celui de l'équipe — le bon se lit dans le profil de
+`~/Library/Developer/Xcode/UserData/Provisioning Profiles/`, clé
+`TeamIdentifier`, via `security cms -D -i <profil>`).
+
+> ⚠️ **`DEVELOPMENT_TEAM` sur la ligne de commande, et pas dans Xcode.**
+> `npx expo prebuild` régénère `ios/` intégralement : il efface donc l'équipe
+> réglée à la souris dans « Signing & Capabilities », et le build suivant
+> s'arrête en quelques secondes sur `Signing for "Blitzmatic" requires a
+> development team`. Passée en argument, l'équipe survit à toutes les
+> régénérations.
+>
+> Ce genre d'échec **ne compile rien** : si le build rend la main trop vite, y
+> voir un problème de configuration plutôt que de code. Et ne jamais tuyauter
+> `xcodebuild` dans un `tail` sans relever `$?` — le code de sortie de l'échec
+> est alors masqué par celui du `tail`.
 
 puis `xcrun devicectl device install app --device <id> <chemin>/Blitzmatic.app`,
 et `npx expo start --dev-client` pour servir le JS.

@@ -51,6 +51,7 @@ import {
 import {
   drawDistinctQuestion,
   generateQuestion,
+  spokenQuestion,
   type Question,
 } from "@/lib/game/generator";
 import {
@@ -62,13 +63,21 @@ import {
   type Level,
 } from "@/lib/game/levels";
 import { OPERATION_CONFIG, type Operation } from "@/lib/game/operations";
-import { haptic } from "@/lib/haptics";
+import { celebrate, haptic } from "@/lib/haptics";
 import { useProfile } from "@/lib/profile";
 import { multiplicationFactStats } from "@/lib/services/factStats";
 import {
+  personalBest,
   saveSession,
   type Platform as PlatformTag,
 } from "@/lib/services/sessions";
+import { readVoiceEnabledSync } from "@/lib/settings";
+import {
+  isSpeechAvailable,
+  prepareSpeech,
+  speakQuestion,
+  stopSpeaking,
+} from "@/lib/speech";
 import { clientUuid } from "@/lib/uuid";
 import { colors, radius, shadow, spacing } from "@/theme";
 
@@ -88,6 +97,13 @@ const RESULT_LOCK_MS = 500;
  * jeu — la question suivante est déjà active en dessous.
  */
 const ANSWER_ECHO_MS = 800;
+/**
+ * Durée d'affichage de la bannière « record battu ». Plus longue que l'écho
+ * (800 ms) parce qu'elle porte une phrase à lire, et non un nombre déjà attendu
+ * — mais posée en surimpression, sans rien décaler et sans jamais retenir le
+ * jeu : le round se joue toujours au nombre de réponses par minute.
+ */
+const RECORD_BANNER_MS = 2200;
 
 const PLATFORM: PlatformTag =
   Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web";
@@ -152,6 +168,15 @@ export function Game({
   const [echo, setEcho] = useState<number | null>(null);
   const echoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  /**
+   * Record personnel **avant** cette partie, à conditions identiques.
+   * `undefined` = pas encore lu, `null` = jamais joué dans ces conditions.
+   * La distinction sert à l'écran de résultat, qui n'affiche rien de faux tant
+   * que la lecture n'est pas revenue.
+   */
+  const [record, setRecord] = useState<number | null | undefined>(undefined);
+  const [recordBeaten, setRecordBeaten] = useState(false);
+  const recordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const questionStart = useRef(0);
   const phaseRef = useRef<Phase>(phase);
@@ -169,6 +194,37 @@ export function Game({
   // Inactivité pendant la question courante : tout appui la remet à zéro, ce
   // qui distingue « bloqué mais il cherche » de « parti jouer ».
   const activityRef = useRef<Activity>(startActivity(0));
+  /**
+   * Énoncé vocal — décidé UNE fois, au montage. En vocal, la question n'est
+   * **pas affichée** : la voix la remplace au lieu de la doubler.
+   *
+   * Lecture **synchrone** (cf. `readVoiceEnabledSync`) : arrivée de façon
+   * asynchrone, la valeur pourrait manquer la première question, qui serait
+   * alors la seule du round à rester muette.
+   *
+   * Un `useState` avec initialisation **paresseuse**, et non un `useRef` :
+   * l'argument d'un `useRef` est évalué à chaque rendu, ce qui rejouerait cette
+   * requête SQLite à chaque frappe et à chaque seconde du chronomètre. Le
+   * réglage se change à l'accueil, jamais ici : la valeur est donc constante
+   * pour toute la partie — ce qui laisse `nextQuestion` stable malgré la
+   * dépendance, et décrit fidèlement la partie enregistrée en base.
+   *
+   * `isSpeechAvailable()` est décisif depuis que l'énoncé écrit disparaît :
+   * sans moteur vocal, masquer la question ne laisserait **rien** à l'écran.
+   * On retombe donc sur l'écrit, et la partie est enregistrée comme telle.
+   */
+  const [voice] = useState(
+    () => readVoiceEnabledSync() && isSpeechAvailable(),
+  );
+  /**
+   * Miroir synchrone de `record`, lu au milieu d'une bonne réponse — donc
+   * possiblement avant le re-rendu, comme `inputRef` et `questionRef`.
+   * Mis à jour à chaque partie, y compris après « Rejouer » : sans ça, la
+   * seconde partie se comparerait encore au record d'avant la première.
+   */
+  const recordRef = useRef<number | null>(null);
+  /** Une seule annonce par partie : on franchit le record une fois. */
+  const recordBeatenRef = useRef(false);
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -176,6 +232,22 @@ export function Game({
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+
+  // Moteur vocal préparé dès le montage, donc pendant le décompte : c'est là
+  // qu'on peut payer ses 100 à 300 ms d'initialisation sans les faire porter à
+  // la première question, dont le chronomètre tourne déjà. Coupé au démontage,
+  // sinon l'énoncé en cours poursuivrait sa lecture sur l'écran d'accueil.
+  useEffect(() => {
+    if (!voice) return;
+    prepareSpeech();
+    return stopSpeaking;
+  }, [voice]);
+
+  // Fin du round : `Game` reste monté (il rend l'écran de résultat), donc rien
+  // ne couperait la question qui vient d'être énoncée à la seconde 60.
+  useEffect(() => {
+    if (phase === "finished") stopSpeaking();
+  }, [phase]);
 
   // Historique → stats par fait et pool pondéré. Lecture LOCALE : contrairement
   // au web, aucun appel réseau — la partie démarre donc aussi en avion.
@@ -200,6 +272,34 @@ export function Game({
       cancelled = true;
     };
   }, [adaptive, ready, profile]);
+
+  // Record personnel à battre. Lecture LOCALE, comme les stats ci-dessus : la
+  // partie démarre en avion, et le décompte de 3 s suffit largement à une
+  // requête SQLite sur un index de profil.
+  useEffect(() => {
+    if (!ready || !profile) return;
+    let cancelled = false;
+    void personalBest(getDb(), {
+      profileId: profile.id,
+      operation,
+      level: effectiveLevel,
+      mode: adaptive ? "adaptive" : "classic",
+      voice,
+    })
+      .then((best) => {
+        if (cancelled) return;
+        recordRef.current = best;
+        setRecord(best);
+      })
+      .catch(() => {
+        // Pas de record lisible : on joue sans annonce plutôt que d'en
+        // promettre une fausse.
+        if (!cancelled) setRecord(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, profile, operation, effectiveLevel, adaptive, voice]);
 
   // Intègre une réponse À CHAUD : le calcul raté peut revenir dans la même
   // partie (le pool ne dépend plus seulement de l'historique figé au départ).
@@ -246,12 +346,15 @@ export function Game({
     }
     questionRef.current = q;
     setQuestion(q);
+    // Énoncé tiré-et-oublié, juste après l'affichage : la voix accompagne la
+    // question, elle ne la précède pas et ne la retient jamais.
+    if (voice) speakQuestion(spokenQuestion(q));
     inputRef.current = "";
     setInput("");
     const now = Date.now();
     questionStart.current = now;
     activityRef.current = startActivity(now);
-  }, [operation, adaptive, effectiveLevel]);
+  }, [operation, adaptive, effectiveLevel, voice]);
 
   // Retour à l'accueil si aucun profil sélectionné.
   useEffect(() => {
@@ -285,6 +388,34 @@ export function Game({
   }, [phase]);
 
   /**
+   * Annonce le franchissement du record, **au moment exact où il tombe**.
+   *
+   * `=== best + 1` et non `> best` : c'est le franchissement qu'on fête, pas
+   * l'état. Doublé du garde `recordBeatenRef`, qui tient même si la partie
+   * repassait par cette valeur.
+   *
+   * `best >= 1` : battre un record de 0 n'est pas un exploit, c'est répondre.
+   * Le joueur qui n'a encore rien à battre (`null`) n'est pas interpellé non
+   * plus — on lui promettrait un adversaire qui n'existe pas.
+   *
+   * Comme tout le reste ici, l'annonce ne retient pas le jeu : elle est posée en
+   * surimpression, la question suivante est déjà tirée en dessous.
+   */
+  const announceRecord = useCallback((correctCount: number) => {
+    const best = recordRef.current;
+    if (best === null || best < 1) return;
+    if (recordBeatenRef.current || correctCount !== best + 1) return;
+    recordBeatenRef.current = true;
+    setRecordBeaten(true);
+    celebrate();
+    if (recordTimer.current) clearTimeout(recordTimer.current);
+    recordTimer.current = setTimeout(
+      () => setRecordBeaten(false),
+      RECORD_BANNER_MS,
+    );
+  }, []);
+
+  /**
    * Appelé UNIQUEMENT quand la bonne réponse est trouvée. Aucune sanction en
    * cas d'erreur.
    *
@@ -311,9 +442,10 @@ export function Game({
       setEcho(q.answer);
       if (echoTimer.current) clearTimeout(echoTimer.current);
       echoTimer.current = setTimeout(() => setEcho(null), ANSWER_ECHO_MS);
+      announceRecord(nextSession.correctCount);
       nextQuestion();
     },
-    [nextQuestion, applyAdaptiveAttempt],
+    [nextQuestion, applyAdaptiveAttempt, announceRecord],
   );
 
   const handleDigit = useCallback(
@@ -347,6 +479,23 @@ export function Game({
     setEcho(null);
   }, []);
 
+  /**
+   * Redire l'énoncé. Indispensable en vocal : la question n'étant plus
+   * affichée, un chiffre mal entendu ne se rattrape d'aucune autre façon.
+   *
+   * Ne touche NI au chronomètre de la question, NI à la saisie en cours :
+   * réécouter n'est pas recommencer. Compte en revanche comme signe de vie,
+   * au même titre qu'un appui sur le pavé — redemander l'énoncé prouve que
+   * l'enfant est devant l'écran, et le distingue de celui qui est parti jouer.
+   */
+  const handleReplay = useCallback(() => {
+    if (phaseRef.current !== "playing") return;
+    const q = questionRef.current;
+    if (!q) return;
+    activityRef.current = registerActivity(activityRef.current, Date.now());
+    speakQuestion(spokenQuestion(q));
+  }, []);
+
   const handleReset = useCallback(() => {
     if (phaseRef.current !== "playing") return;
     activityRef.current = registerActivity(activityRef.current, Date.now());
@@ -358,6 +507,7 @@ export function Game({
   useEffect(() => {
     return () => {
       if (echoTimer.current) clearTimeout(echoTimer.current);
+      if (recordTimer.current) clearTimeout(recordTimer.current);
     };
   }, []);
 
@@ -379,6 +529,7 @@ export function Game({
       durationSeconds: DURATION_SECONDS - timeLeft,
       mode: adaptive ? "adaptive" : "classic",
       platform: PLATFORM,
+      voice,
       // Tiré ici et pas au montage : `savedRef` garantit un seul passage par
       // partie, donc chaque partie a bien son propre identifiant.
       clientUuid: clientUuid(),
@@ -386,13 +537,24 @@ export function Game({
     })
       .then(() => setSaveState("done"))
       .catch(() => setSaveState("error"));
-  }, [phase, profile, operation, timeLeft, adaptive, effectiveLevel]);
+  }, [phase, profile, operation, timeLeft, adaptive, effectiveLevel, voice]);
 
   const restart = useCallback(() => {
     savedRef.current = false;
     inputRef.current = "";
     setEcho(null);
     setSaveState("idle");
+    // La partie qui vient d'être jouée compte désormais dans le record : sans
+    // ça, « Rejouer » referait l'annonce sur le même palier, tour après tour.
+    // Calculé plutôt que relu en base — la valeur est connue, exacte, et cette
+    // relecture courrait après une écriture peut-être encore en vol.
+    const played = sessionRef.current.correctCount;
+    const nextRecord = Math.max(recordRef.current ?? 0, played);
+    recordRef.current = nextRecord;
+    setRecord(nextRecord);
+    recordBeatenRef.current = false;
+    setRecordBeaten(false);
+    if (recordTimer.current) clearTimeout(recordTimer.current);
     setSession(initialSession);
     sessionRef.current = initialSession;
     setTimeLeft(DURATION_SECONDS);
@@ -405,6 +567,9 @@ export function Game({
     return (
       <ResultScreen
         session={session}
+        // Le record d'AVANT la partie : c'est lui qui donne son sens au score
+        // qu'on vient de faire. `restart` ne l'avancera qu'au moment de rejouer.
+        previousBest={record}
         saveState={saveState}
         onRestart={restart}
       />
@@ -430,6 +595,16 @@ export function Game({
         <View style={styles.headerSpacer} />
       </View>
 
+      {/* En SURIMPRESSION, et `pointerEvents="none"` : la bannière ne décale
+          rien (déplacer la case de réponse en pleine partie serait pire que de
+          ne rien annoncer) et n'intercepte aucun appui destiné au pavé. */}
+      {recordBeaten ? (
+        <View style={styles.recordBanner} pointerEvents="none">
+          <Ionicons name="trophy" size={18} color={colors.white} />
+          <Text style={styles.recordBannerText}>Record battu !</Text>
+        </View>
+      ) : null}
+
       {phase === "countdown" ? (
         <View style={styles.stage}>
           <Countdown seconds={COUNTDOWN_SECONDS} onDone={startPlaying} />
@@ -437,16 +612,31 @@ export function Game({
       ) : (
         <>
       <View style={styles.stage}>
-        <Text style={styles.question}>
-          {question?.a}
-          <Text style={styles.questionSymbol}>
-            {" "}
-            {question
-              ? OPERATION_CONFIG[question.operation].symbol
-              : config.symbol}{" "}
+        {/* Écrit OU vocal, jamais les deux : afficher la question à côté de la
+            voix ferait de celle-ci un doublon, et l'écrit gagnerait toujours.
+            En vocal, le bouton occupe la place de l'énoncé — c'est le seul
+            moyen de réentendre, donc il doit être là où l'œil cherche déjà. */}
+        {voice ? (
+          <Pressable
+            style={styles.replay}
+            onPress={handleReplay}
+            accessibilityRole="button"
+            accessibilityLabel="Redire la question"
+          >
+            <Ionicons name="volume-high" size={54} color={colors.green} />
+          </Pressable>
+        ) : (
+          <Text style={styles.question}>
+            {question?.a}
+            <Text style={styles.questionSymbol}>
+              {" "}
+              {question
+                ? OPERATION_CONFIG[question.operation].symbol
+                : config.symbol}{" "}
+            </Text>
+            {question?.b}
           </Text>
-          {question?.b}
-        </Text>
+        )}
 
         {/* La case suit le niveau : à Légendaire une réponse fait 5 chiffres,
             qui débordaient sur deux lignes dans une case taillée pour 3. */}
@@ -494,10 +684,13 @@ export function Game({
 
 function ResultScreen({
   session,
+  previousBest,
   saveState,
   onRestart,
 }: {
   session: SessionState;
+  /** Record d'avant la partie. `undefined` = non lu, `null` = aucun. */
+  previousBest: number | null | undefined;
   saveState: SaveState;
   onRestart: () => void;
 }) {
@@ -517,6 +710,7 @@ function ResultScreen({
       <View style={styles.scoreCard}>
         <Text style={styles.scoreValue}>{session.correctCount}</Text>
         <Text style={styles.scoreCaption}>réponses justes en 1 min</Text>
+        <RecordLine score={session.correctCount} previousBest={previousBest} />
       </View>
 
       <View style={styles.statGrid}>
@@ -562,6 +756,47 @@ function ResultScreen({
   );
 }
 
+/**
+ * Le score du round rapporté au record personnel, sous le nombre.
+ *
+ * Quatre cas, et aucun ne ment : tant que le record n'est pas lu (`undefined`)
+ * la ligne reste vide plutôt que d'afficher un « 0 » qui serait faux, et le
+ * premier score dans ces conditions (`null`) est annoncé comme tel — pas comme
+ * un record battu, il n'y avait pas d'adversaire.
+ *
+ * Le record est celui des **mêmes conditions** (opération, niveau, mode,
+ * énoncé) : cf. `personalBest`, qui explique pourquoi cette comparaison n'a de
+ * sens qu'à difficulté égale.
+ */
+function RecordLine({
+  score,
+  previousBest,
+}: {
+  score: number;
+  previousBest: number | null | undefined;
+}) {
+  if (previousBest === undefined) return null;
+
+  if (previousBest === null) {
+    return <Text style={styles.recordLine}>Premier score dans ce mode</Text>;
+  }
+  if (score > previousBest) {
+    return (
+      <Text style={[styles.recordLine, styles.recordLineBeaten]}>
+        🏆 Record battu ! (avant : {previousBest})
+      </Text>
+    );
+  }
+  if (score === previousBest) {
+    return <Text style={styles.recordLine}>Record égalé : {previousBest}</Text>;
+  }
+  return (
+    <Text style={styles.recordLine}>
+      Record personnel : {previousBest} — encore {previousBest - score + 1} !
+    </Text>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.statCard}>
@@ -597,6 +832,20 @@ const styles = StyleSheet.create({
   question: { fontSize: 46, fontWeight: "800", color: colors.textPrimary },
   questionSymbol: { color: colors.green },
 
+  // Prend la place de l'énoncé écrit, à hauteur comparable pour que la case de
+  // réponse ne saute pas d'un mode à l'autre. Large : on le vise sans regarder,
+  // parfois plusieurs fois de suite, sans quitter la position de saisie.
+  replay: {
+    width: 108,
+    height: 108,
+    borderRadius: radius.pill,
+    backgroundColor: colors.greenSoft,
+    borderWidth: 2,
+    borderColor: colors.green,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   // `minWidth` est posé au rendu, d'après le niveau. La hauteur, elle, ne
   // bouge pas : la case doit rester au même endroit d'un niveau à l'autre.
   answerBox: {
@@ -616,6 +865,24 @@ const styles = StyleSheet.create({
   // `fontSize` est posé au rendu, d'après le niveau.
   answerText: { fontWeight: "700", color: colors.textPrimary },
   answerPlaceholder: { color: colors.textDisabled },
+
+  // `position: absolute` : la bannière flotte sous l'en-tête sans pousser la
+  // scène. `zIndex` la garde au-dessus de la case de réponse.
+  recordBanner: {
+    position: "absolute",
+    top: spacing.xxl * 2,
+    alignSelf: "center",
+    zIndex: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.green,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    ...shadow.card,
+  },
+  recordBannerText: { color: colors.white, fontSize: 16, fontWeight: "700" },
 
   stats: {
     flexDirection: "row",
@@ -645,6 +912,14 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: colors.textSecondary,
   },
+  recordLine: {
+    marginTop: spacing.md,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "center",
+    color: colors.textSecondary,
+  },
+  recordLineBeaten: { color: colors.green, fontSize: 15 },
   statGrid: { flexDirection: "row", gap: spacing.md, alignSelf: "stretch" },
   statCard: {
     flex: 1,

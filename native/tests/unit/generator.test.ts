@@ -5,6 +5,8 @@ import {
   formatQuestion,
   generateQuestion,
   randInt,
+  spokenQuestion,
+  type Question,
 } from "@/lib/game/generator";
 
 /** RNG déterministe : rejoue une séquence fixe de valeurs dans [0, 1). */
@@ -153,5 +155,37 @@ describe("formatQuestion", () => {
   it("formate avec le symbole fourni", () => {
     const q = generateQuestion("multiplication", { rng: seq([0.3, 0.2]) });
     expect(formatQuestion(q, "×")).toBe("4 × 3");
+  });
+});
+
+describe("spokenQuestion", () => {
+  const q = (operation: Question["operation"]): Question => ({
+    a: 10,
+    b: 9,
+    operation,
+    answer: computeAnswer(operation, 10, 9),
+  });
+
+  it("dit le symbole en toutes lettres", () => {
+    expect(spokenQuestion(q("multiplication"))).toBe("10 fois 9");
+    expect(spokenQuestion(q("addition"))).toBe("10 plus 9");
+    expect(spokenQuestion(q("subtraction"))).toBe("10 moins 9");
+    expect(spokenQuestion(q("division"))).toBe("10 divisé par 9");
+  });
+
+  it("n'énonce jamais un symbole mathématique brut", () => {
+    // Une voix qui bute sur « × » ou « − » lit un énoncé mutilé — le défaut
+    // serait inaudible en test unitaire, d'où cette vérification explicite.
+    for (const operation of ["multiplication", "subtraction", "division"] as const) {
+      expect(spokenQuestion(q(operation))).not.toMatch(/[×÷−+]/);
+    }
+  });
+
+  it("suit l'opération de la question, pas celle du menu", () => {
+    // En mode « Aléatoire », l'écran affiche le symbole de `all` (« ? ») tant
+    // qu'aucune question n'est tirée. L'énoncé, lui, doit toujours venir de la
+    // question — sinon ce mode ferait prononcer « 10 ? 9 ».
+    const drawn = generateQuestion("all", { rng: seq([0, 0.3, 0.2]) });
+    expect(spokenQuestion(drawn)).not.toContain("?");
   });
 });
