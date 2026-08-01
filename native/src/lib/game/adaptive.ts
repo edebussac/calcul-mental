@@ -76,7 +76,13 @@ export const ADAPTIVE_PARAMS: AdaptiveParams = {
   beta: 0.6,
   fastRefMs: 1500,
   slowRefMs: 6000,
-  confScale: 5,
+  // 2,5 (et non 5, valeur du banc d'essai web) : fait converger la confiance
+  // vers 0,80 dès n=4 répétitions au lieu de n=8. Avec 5, un fait vu 1 seule
+  // fois n'écartait son poids que de ±10-20 % (2,64 à 3,20) — noyé dans le
+  // jitter (±10 %) — donc le tirage était statistiquement proche du hasard
+  // pendant les toutes premières parties en mode ciblé. Vérifié par calcul :
+  // confidence(4, 2.5) = 0,798 = confidence(8, 5).
+  confScale: 2.5,
   reviewHalfLifeDays: 10,
   floor: 1,
   difficultyWeight: 4,
